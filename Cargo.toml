@@ -1,0 +1,22 @@
+[package]
+name = "deckscribe"
+version = "0.1.0"
+edition = "2024"
+description = "Turn a presentation video into slide images, descriptions and per-slide transcripts"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+# The crate and its -sys crate must stay on the same version: the bindings
+# refuse to load a native library from another release.
+transcribe-cpp = { version = "=0.4.2", features = ["vulkan"] }
+transcribe-cpp-sys = "=0.4.2"
+ureq = { version = "3", features = ["json"] }
+
+[profile.release]
+debug = false
