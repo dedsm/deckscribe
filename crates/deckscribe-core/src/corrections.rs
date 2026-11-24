@@ -256,9 +256,13 @@ pub fn candidates(deck: &Deck) -> Vec<(Candidate, Strength)> {
             if ku.chars().count() < 4 || w.contains(['\'', '’']) {
                 continue;
             }
-            // A name heard with other capitals takes the slide's: "PStack" for "pstack".
+            // A name heard with odd capitals inside it takes the slide's
+            // ("PStack" for "pstack"); a slide's all-capitals styling is not copied.
+            let odd_caps = w.chars().skip(1).any(char::is_uppercase);
+            let styled = |t: &&Term| t.text.chars().all(|c| !c.is_lowercase());
             if let Some(t) = targets
                 .iter()
+                .filter(|t| odd_caps && !styled(t))
                 .find(|t| !t.pair && t.key == ku && t.text != w && !english().contains(ku.as_str()))
             {
                 let e = found
