@@ -381,3 +381,31 @@ fn wrapped_slide_lines_are_joined_and_lists_are_not() {
         Some("Thread #glass-oncall-assistant")
     );
 }
+
+#[test]
+fn separate_lowercase_items_are_not_joined() {
+    let lines = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        join_wrapped(lines(&[
+            "A narrow local edit can stay correct for the whole Electron",
+            "app."
+        ]))
+        .len(),
+        1
+    );
+    let items = [
+        "work like real software engineers: eg pstack",
+        "refactoring/rewriting architecture to be (greenfield vs brownfield)",
+        "agent friendly",
+    ];
+    assert_eq!(join_wrapped(lines(&items)).len(), 3);
+    let slack = [
+        "reproduced on the prior commit, gone on the fix",
+        "focusing another conversation leaves Apps closed",
+    ];
+    assert_eq!(join_wrapped(lines(&slack)).len(), 2);
+    assert_eq!(
+        parse("TEXT: • verification for correctness").text,
+        ["verification for correctness"]
+    );
+}

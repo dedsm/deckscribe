@@ -74,7 +74,9 @@ pub fn parse(reply: &str) -> SlideText {
             }
             at = At::Title;
         } else if let Some(rest) = field("TEXT:") {
-            out.text.extend(none_if_empty(rest));
+            out.text.extend(none_if_empty(
+                rest.trim_start_matches(['-', '*', '•']).trim(),
+            ));
             at = At::Text;
         } else if let Some(rest) = field("VISUALS:") {
             visuals.push_str(rest);
@@ -204,18 +206,23 @@ const DANGLING: &[&str] = &[
     "will", "your", "our", "their", "its", "this", "these",
 ];
 
-/// Joins lines the model split where the slide wrapped a sentence: a line
-/// starting lowercase continues the one before it when that one ends on a word
-/// like "for" or "the", or is long and has no closing punctuation. Short list
-/// items ("what exists" / "how users reach it") stay separate.
+/// Joins lines the model split where the slide wrapped a sentence. A line
+/// starting lowercase continues the one before when that one has no closing
+/// punctuation and either ends on a word a phrase rarely ends on ("for",
+/// "the") or is finished by this line, a short tail ending a sentence
+/// ("close it."). Separate items, even lowercase ones, stay separate.
 pub fn join_wrapped(lines: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     for line in lines {
+        let tail =
+            line.split_whitespace().count() <= 3 && line.trim_end().ends_with(['.', '!', '?']);
         let continues = line.chars().next().is_some_and(char::is_lowercase)
             && out.last().is_some_and(|prev: &String| {
                 let last = prev.split_whitespace().last().unwrap_or("").to_lowercase();
-                let open = !prev.trim_end().ends_with(['.', '!', '?', ':', ';', ')']);
-                open && (DANGLING.contains(&last.as_str()) || prev.chars().count() >= 40)
+                let open = !prev
+                    .trim_end()
+                    .ends_with(['.', '!', '?', ':', ';', ')', ',']);
+                open && (DANGLING.contains(&last.as_str()) || tail)
             });
         match out.last_mut() {
             Some(prev) if continues => {
