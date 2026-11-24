@@ -206,11 +206,17 @@ const DANGLING: &[&str] = &[
     "will", "your", "our", "their", "its", "this", "these",
 ];
 
+/// Abbreviations that always lead into more: "eg pstack", "greenfield vs
+/// brownfield". Their trailing dot is not the end of a sentence.
+const LEADING: &[&str] = &["eg", "e.g.", "ie", "i.e.", "vs", "vs.", "via"];
+
 /// Joins lines the model split where the slide wrapped a sentence. A line
 /// starting lowercase continues the one before when that one has no closing
 /// punctuation and either ends on a word a phrase rarely ends on ("for",
 /// "the") or is finished by this line, a short tail ending a sentence
-/// ("close it."). Separate items, even lowercase ones, stay separate.
+/// ("close it."). It also continues a line ending on "eg" or "vs", or one
+/// with a bracket still open. Separate items, even lowercase ones, stay
+/// separate.
 pub fn join_wrapped(lines: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     for line in lines {
@@ -222,7 +228,10 @@ pub fn join_wrapped(lines: Vec<String>) -> Vec<String> {
                 let open = !prev
                     .trim_end()
                     .ends_with(['.', '!', '?', ':', ';', ')', ',']);
-                open && (DANGLING.contains(&last.as_str()) || tail)
+                let bracket = prev.matches('(').count() > prev.matches(')').count();
+                LEADING.contains(&last.as_str())
+                    || bracket
+                    || (open && (DANGLING.contains(&last.as_str()) || tail))
             });
         match out.last_mut() {
             Some(prev) if continues => {

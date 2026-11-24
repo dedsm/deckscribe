@@ -399,6 +399,19 @@ fn separate_lowercase_items_are_not_joined() {
         "agent friendly",
     ];
     assert_eq!(join_wrapped(lines(&items)).len(), 3);
+    let wrapped = [
+        "teach agents to work like real software engineers: eg",
+        "pstack",
+        "refactoring/rewriting architecture to be (greenfield vs",
+        "brownfield)",
+    ];
+    assert_eq!(
+        join_wrapped(lines(&wrapped)),
+        [
+            "teach agents to work like real software engineers: eg pstack",
+            "refactoring/rewriting architecture to be (greenfield vs brownfield)",
+        ]
+    );
     let slack = [
         "reproduced on the prior commit, gone on the fix",
         "focusing another conversation leaves Apps closed",
