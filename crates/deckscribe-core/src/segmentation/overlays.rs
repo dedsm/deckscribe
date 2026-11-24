@@ -192,3 +192,29 @@ pub fn mask(boxes: &[BlockBox]) -> Vec<bool> {
     }
     m
 }
+
+/// A block mask as rectangles (x, y, w, h as fractions of the frame), one per
+/// horizontal run of blocks.
+pub fn rects(mask: &[bool]) -> Vec<[f32; 4]> {
+    let mut out = Vec::new();
+    for y in 0..GH {
+        let mut x = 0;
+        while x < GW {
+            if !mask[y * GW + x] {
+                x += 1;
+                continue;
+            }
+            let start = x;
+            while x < GW && mask[y * GW + x] {
+                x += 1;
+            }
+            out.push([
+                start as f32 / GW as f32,
+                y as f32 / GH as f32,
+                (x - start) as f32 / GW as f32,
+                1.0 / GH as f32,
+            ]);
+        }
+    }
+    out
+}

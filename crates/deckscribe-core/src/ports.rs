@@ -47,13 +47,19 @@ pub trait ModelStore {
     fn speech_model(&self) -> Result<PathBuf>;
 }
 
-/// A vision model that answers a prompt about an image.
+/// A vision model that answers a prompt about one or more JPEG images, given
+/// in order.
 pub trait Describer {
-    fn describe(&self, jpeg: &[u8], prompt: &str) -> Result<String>;
+    fn ask(&self, images: &[&[u8]], prompt: &str) -> Result<String>;
     /// The model and server, for the deck's record.
     fn name(&self) -> String {
         String::new()
     }
+}
+
+/// A text model that answers a prompt, for the optional summary.
+pub trait TextModel {
+    fn complete(&self, prompt: &str, max_tokens: u32) -> Result<String>;
 }
 
 /// Persists a deck in one format inside an output folder.

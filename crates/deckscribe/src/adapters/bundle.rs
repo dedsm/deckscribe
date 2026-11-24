@@ -52,6 +52,14 @@ impl DeckWriter for Bundle {
     }
 }
 
+fn parts_list(parts: &[usize]) -> String {
+    parts
+        .iter()
+        .map(|n| format!("#{n}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn round(t: f64) -> f64 {
     (t * 100.0).round() / 100.0
 }
@@ -142,6 +150,60 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
     }
     s.push_str(".\n\n");
 
+    if let Some(sm) = &deck.summary {
+        s.push_str("## Summary\n\n");
+        if let Some(t) = &sm.title {
+            let _ = writeln!(s, "**Talk:** {t}  ");
+        }
+        if let Some(sp) = &sm.speaker {
+            let _ = writeln!(s, "**Speaker:** {sp}  ");
+        }
+        if !sm.thesis.is_empty() {
+            s.push_str("\n**Main claims:**\n\n");
+            for t in &sm.thesis {
+                let _ = writeln!(s, "- {t}");
+            }
+        }
+        s.push_str("\nWritten by a text model from the slides and the transcript; check claims against the parts below.\n\n");
+    }
+
+    if !deck.corrected.is_empty() || !deck.possible.is_empty() {
+        s.push_str("## Names and terms\n\n");
+        if !deck.corrected.is_empty() {
+            s.push_str(
+                "Corrected in **Said**: terms the slides spell out that the transcription never got right.\n\n\
+                 | Heard | On the slide | Parts |\n|---|---|---|\n",
+            );
+            for c in &deck.corrected {
+                let _ = writeln!(
+                    s,
+                    "| {} | {} | {} |",
+                    c.heard,
+                    c.correct,
+                    parts_list(&c.parts)
+                );
+            }
+            s.push('\n');
+        }
+        if !deck.possible.is_empty() {
+            s.push_str(
+                "Possible mishearings, left as heard: a word in **Said** close in spelling or sound to a \
+                 term on the slide being shown. Prefer the slide's spelling when they mean the same thing.\n\n\
+                 | Heard | On the slide | Parts |\n|---|---|---|\n",
+            );
+            for c in &deck.possible {
+                let _ = writeln!(
+                    s,
+                    "| {} | {} | {} |",
+                    c.heard,
+                    c.correct,
+                    parts_list(&c.parts)
+                );
+            }
+            s.push('\n');
+        }
+    }
+
     s.push_str("## How to read this deck\n\n");
     s.push_str(
         "- Parts are numbered. Refer to them the way the list below does, as `#N (m:ss)`, \
@@ -170,12 +232,17 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
     }
     if has_speech {
         s.push_str(
-            "- **Said** is machine transcription. It mishears names and technical terms; when it \
-             disagrees with the slide on a name, trust the slide.\n",
+            "- **Said** is machine transcription with fillers (uh, um) left out. It mishears names \
+             and technical terms; when it disagrees with the slide on a name, trust the slide.\n",
         );
         s.push_str(
             "- Words spoken during a slide change belong to the slide that comes next, except that \
              a sentence begun on one slide stays with it.\n",
+        );
+    }
+    if deck.parts.iter().any(|p| p.same_as.is_some()) {
+        s.push_str(
+            "- A part marked *back to #N* returns to a slide already shown; its slide text repeats #N's.\n",
         );
     }
     if !a.masked.is_empty() {
@@ -184,7 +251,7 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
             "- Regions that kept changing (webcam, captions, speaker panel) were ignored when finding \
              slides{}: {}.",
             if described {
-                " and blacked out before reading them"
+                ", and blacked out where they were changing before each slide was read"
             } else {
                 ""
             },
@@ -206,6 +273,9 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
         if let Some(t) = p.title() {
             let _ = write!(line, " {t}");
         }
+        if let Some(n) = p.same_as {
+            let _ = write!(line, " *back to #{n}*");
+        }
         let said = opening(&p.narration, 12);
         if !said.is_empty() {
             let _ = write!(line, " — {said}");
@@ -223,6 +293,9 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
             _ => {
                 let _ = write!(s, " · {}", kind_label(p));
             }
+        }
+        if let Some(n) = p.same_as {
+            let _ = write!(s, " · *back to #{n}*");
         }
         s.push_str("\n\n");
         if let Some(img) = &p.image {
@@ -273,7 +346,9 @@ fn manifest(deck: &Deck) -> Value {
                 "image": p.image,
                 "image_at": p.image_at.map(round),
                 "slide_text": p.slide_text,
+                "same_as": p.same_as,
                 "narration": p.narration,
+                "words": [p.words.start, p.words.end],
             })
         })
         .collect();
@@ -282,6 +357,9 @@ fn manifest(deck: &Deck) -> Value {
         "recording": deck.recording,
         "duration": round(deck.duration),
         "about": deck.about,
+        "summary": deck.summary,
+        "corrected": deck.corrected,
+        "possible_mishearings": deck.possible,
         "files": {"entry": ENTRY, "contact_sheet": CONTACT_SHEET, "words": WORDS, "slides": "slides/"},
         "parts": parts,
     })

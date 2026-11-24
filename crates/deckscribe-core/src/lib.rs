@@ -7,6 +7,7 @@
 //! crate provides the adapters. See `docs/design.md` for the vocabulary.
 
 pub mod alignment;
+pub mod corrections;
 pub mod deck;
 pub mod description;
 pub mod frames;
@@ -14,6 +15,7 @@ pub mod ports;
 pub mod segmentation;
 pub mod settings;
 pub mod speech;
+pub mod summary;
 pub mod time;
 
 pub use deck::{About, Deck, DeckPart, PartKind};

@@ -44,6 +44,10 @@ struct Cli {
     /// Ask a llama.cpp server to answer without reasoning first (faster).
     #[arg(long)]
     no_think: bool,
+    /// Add a summary (title, speaker, main claims) and fix misheard terms the
+    /// slides spell out, using the same server and model as --describe-url.
+    #[arg(long, requires = "describe_url")]
+    summarize: bool,
 
     /// Do not look for webcam, caption or speaker-panel overlays.
     #[arg(long)]
@@ -107,11 +111,7 @@ fn main() -> Result<()> {
     let recognizer = make_recognizer(&cli)?;
     #[cfg(feature = "describe")]
     let describer = cli.describe_url.as_deref().map(|url| {
-        deckscribe::adapters::openai_vision::OpenAiVision::new(
-            url,
-            &cli.describe_model,
-            cli.no_think,
-        )
+        deckscribe::adapters::openai_vision::OpenAi::new(url, &cli.describe_model, cli.no_think)
     });
     #[cfg(not(feature = "describe"))]
     if cli.describe_url.is_some() {
@@ -137,6 +137,13 @@ fn main() -> Result<()> {
                 .map(|d| d as &dyn deckscribe_core::ports::Describer),
             #[cfg(not(feature = "describe"))]
             describer: None,
+            #[cfg(feature = "describe")]
+            text_model: describer
+                .as_ref()
+                .filter(|_| cli.summarize)
+                .map(|d| d as &dyn deckscribe_core::ports::TextModel),
+            #[cfg(not(feature = "describe"))]
+            text_model: None,
             writers: vec![Box::new(Bundle)],
         },
     )?;

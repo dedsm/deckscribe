@@ -77,3 +77,43 @@ pub fn transcribe(
     }
     Ok(words)
 }
+
+/// Hesitations that carry nothing when reading: "uh", "um" and the like, with
+/// any punctuation the recognizer attached.
+pub fn is_filler(text: &str) -> bool {
+    let t = text
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_ascii_lowercase();
+    matches!(
+        t.as_str(),
+        "uh" | "um" | "uhm" | "umm" | "uhh" | "erm" | "er" | "ah" | "hmm" | "mm"
+    )
+}
+
+/// Words as they read best: fillers dropped, and a ", you know," aside removed.
+/// The exact words stay in the transcript.
+pub fn readable(words: &[&str]) -> String {
+    let mut out: Vec<&str> = Vec::with_capacity(words.len());
+    let mut i = 0;
+    while i < words.len() {
+        let w = words[i];
+        if is_filler(w) {
+            i += 1;
+            continue;
+        }
+        // "you know," as an aside: followed by a comma, and at a clause start.
+        let clause_start = out.last().is_none_or(|p| p.ends_with([',', '.', '?', '!']));
+        if clause_start
+            && w.eq_ignore_ascii_case("you")
+            && words
+                .get(i + 1)
+                .is_some_and(|n| n.eq_ignore_ascii_case("know,"))
+        {
+            i += 2;
+            continue;
+        }
+        out.push(w);
+        i += 1;
+    }
+    out.join(" ")
+}

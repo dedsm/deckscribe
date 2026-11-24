@@ -64,16 +64,13 @@ pub fn assign(words: &[Word], spans: &[Span], snap: f64) -> Vec<Range<usize>> {
         .collect()
 }
 
-/// The narration of each span as text.
+/// The narration of each span as text, without fillers (see
+/// `speech::readable`).
 pub fn narrate(words: &[Word], spans: &[Span]) -> Vec<String> {
     assign(words, spans, SENTENCE_SNAP)
         .into_iter()
         .map(|r| {
-            words[r]
-                .iter()
-                .map(|w| w.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
+            crate::speech::readable(&words[r].iter().map(|w| w.text.as_str()).collect::<Vec<_>>())
         })
         .collect()
 }

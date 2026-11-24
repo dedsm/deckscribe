@@ -60,6 +60,42 @@ impl Stretches {
         out
     }
 
+    /// The part of a frame's mask that was actually changing around it: mask
+    /// blocks that moved within `window` frames either side, grown by one
+    /// block. Painting out only these hides the captions and webcam of that
+    /// moment without hiding slide text that merely shares their region.
+    pub fn active_mask(&self, features: &FrameFeatures, frame: usize, window: usize) -> Vec<bool> {
+        let mask = &self.at(frame).mask;
+        let mut moved = vec![false; GW * GH];
+        let (a, b) = (
+            frame.saturating_sub(window).max(1),
+            (frame + window).min(features.count.saturating_sub(1)),
+        );
+        for i in a..=b {
+            for (m, (&s, &inside)) in moved.iter_mut().zip(features.change(i).iter().zip(mask)) {
+                *m |= inside && crate::frames::moved(s);
+            }
+        }
+        let mut grown = moved.clone();
+        for y in 0..GH {
+            for x in 0..GW {
+                if !moved[y * GW + x] {
+                    continue;
+                }
+                for (dx, dy) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+                    if (0..GW as i32).contains(&nx)
+                        && (0..GH as i32).contains(&ny)
+                        && mask[ny as usize * GW + nx as usize]
+                    {
+                        grown[ny as usize * GW + nx as usize] = true;
+                    }
+                }
+            }
+        }
+        grown
+    }
+
     pub fn live_seconds(&self) -> f64 {
         self.list
             .iter()

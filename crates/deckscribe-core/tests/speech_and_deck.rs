@@ -2,10 +2,12 @@
 
 use anyhow::Result;
 use deckscribe_core::alignment::{assign, narrate};
-use deckscribe_core::description::parse;
+use deckscribe_core::description::{drop_chrome, parse, parse_same, same_slide, similarity};
 use deckscribe_core::ports::Recognizer;
+use deckscribe_core::speech::readable;
 use deckscribe_core::speech::{AUDIO_RATE, pieces, transcribe};
 use deckscribe_core::{Deck, DeckPart, PartKind, SlideText, Span, Word};
+use deckscribe_core::{corrections, summary};
 
 fn w(start: f64, end: f64, text: &str) -> Word {
     Word {
@@ -85,7 +87,9 @@ fn part(number: usize, start: f64, end: f64) -> DeckPart {
         image_at: Some(end - 1.0),
         image: None,
         narration: String::new(),
+        words: 0..0,
         slide_text: None,
+        same_as: None,
     }
 }
 
@@ -97,8 +101,13 @@ fn a_deck_with_a_gap_or_lost_words_is_rejected() {
         duration: 20.0,
         parts: vec![part(1, 0.0, 10.0), part(2, 10.0, 20.0)],
         words: vec![w(1.0, 2.0, "hi")],
+        summary: None,
+        corrected: vec![],
+        possible: vec![],
     };
     deck.parts[0].narration = "hi".into();
+    deck.parts[0].words = 0..1;
+    deck.parts[1].words = 1..1;
     deck.check().unwrap();
 
     let mut gap = deck.clone();
@@ -106,7 +115,7 @@ fn a_deck_with_a_gap_or_lost_words_is_rejected() {
     assert!(gap.check().is_err());
 
     let mut lost = deck.clone();
-    lost.parts[0].narration.clear();
+    lost.parts[0].words = 0..0;
     assert!(lost.check().is_err());
 
     let mut described_live = deck.clone();
@@ -167,4 +176,149 @@ fn slide_text_is_read_into_fields() {
 
     let free = parse("The slide shows a kitchen.");
     assert_eq!(free.unparsed.as_deref(), Some("The slide shows a kitchen."));
+}
+
+#[test]
+fn fillers_leave_the_narration() {
+    let words = [
+        "Uh,", "so", "I", "um", "shipped", "it.", "You", "know,", "it", "worked,", "you", "know,",
+        "really.",
+    ];
+    assert_eq!(readable(&words), "so I shipped it. it worked, really.");
+    assert_eq!(readable(&["do", "you", "know", "it?"]), "do you know it?");
+}
+
+fn reading(title: &str, text: &[&str]) -> SlideText {
+    SlideText {
+        title: Some(title.into()),
+        text: text.iter().map(|t| t.to_string()).collect(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn chrome_repeated_across_slides_is_dropped() {
+    let mut a = reading(
+        "cursor compile - lauren / Page 1",
+        &["Share", "Trust your agents more"],
+    );
+    let mut b = reading(
+        "Feature map",
+        &["Share", "what exists", "cursor compile - lauren / Page 1"],
+    );
+    let mut c = reading(
+        "CLI",
+        &[
+            "Share",
+            "drive settings",
+            "cursor compile - lauren / Page 1",
+        ],
+    );
+    let mut d = reading("Automations", &["schedule agents"]);
+    drop_chrome(&mut [&mut a, &mut b, &mut c, &mut d]);
+    assert_eq!(a.title, None, "a document name is not a slide title");
+    assert_eq!(a.text, ["Trust your agents more"]);
+    assert_eq!(b.text, ["what exists"]);
+    assert_eq!(d.text, ["schedule agents"]);
+    assert_eq!(parse("TITLE: (good)\nTEXT: i shipped 2000 PRs").title, None);
+}
+
+#[test]
+fn the_same_slide_read_twice_is_recognised() {
+    let a = reading(
+        "how do I trust my agents more?",
+        &[
+            "correctness",
+            "skills that teach agents",
+            "your codebase is memory",
+        ],
+    );
+    let b = reading(
+        "How do I trust my agents more?",
+        &[
+            "correctness",
+            "skills that teach agents",
+            "codebase is memory",
+            "automations",
+        ],
+    );
+    let c = reading(
+        "Michelin kitchen",
+        &["line cooks", "sous chefs", "equipment"],
+    );
+    assert!(same_slide(&a, &b), "{}", similarity(&a, &b));
+    assert!(!same_slide(&a, &c));
+    assert_eq!(parse_same("SAME"), Some(true));
+    assert_eq!(parse_same("**DIFFERENT**."), Some(false));
+    assert_eq!(parse_same("maybe"), None);
+}
+
+#[test]
+fn mishearings_are_found_against_the_slide_on_screen() {
+    let mut deck = Deck {
+        recording: "t.mp4".into(),
+        duration: 30.0,
+        about: Default::default(),
+        parts: vec![part(1, 0.0, 10.0), part(2, 10.0, 20.0), part(3, 20.0, 30.0)],
+        words: vec![],
+        summary: None,
+        corrected: vec![],
+        possible: vec![],
+    };
+    deck.parts[0].slide_text = Some(reading("Lauren Tan (@poteto)", &["Grok Bot at SpaceX"]));
+    deck.parts[1].slide_text = Some(reading("Errors", &["Sentry", "pstack"]));
+    deck.parts[2].slide_text = Some(reading("Kitchen", &["line cooks"]));
+    deck.parts[0].narration = "You might know me as Potato. I work on Grogbot there.".into();
+    deck.parts[1].narration =
+        "Century catches it, and PSnack shows the threads. Their agents help.".into();
+    deck.parts[2].narration = "The line cooks matter, and Century again.".into();
+    deck.words = [
+        "You", "might", "know", "me", "as", "Potato.", "I", "work", "on", "Grogbot", "there.",
+        "Century", "catches", "it,", "and", "PSnack", "shows", "the", "threads.", "Their",
+        "agents", "help.", "The", "line", "cooks", "matter,", "and", "Century", "again.",
+    ]
+    .iter()
+    .map(|t| w(0.0, 0.1, t))
+    .collect();
+    let cands = corrections::candidates(&deck);
+    let found: Vec<(&str, &str)> = cands
+        .iter()
+        .map(|(c, _)| (c.heard.as_str(), c.correct.as_str()))
+        .collect();
+    for want in [
+        ("Potato", "poteto"),
+        ("Grogbot", "Grok Bot"),
+        ("Century", "Sentry"),
+        ("PSnack", "pstack"),
+    ] {
+        assert!(found.contains(&want), "{want:?} not in {found:?}");
+    }
+    assert!(
+        found.iter().all(|(h, _)| *h != "Their" && *h != "agents"),
+        "common words stay: {found:?}"
+    );
+    assert!(
+        found.iter().all(|(_, t)| !t.contains("line")),
+        "ordinary words are no target: {found:?}"
+    );
+    let century = cands
+        .iter()
+        .find(|(c, _)| c.heard == "Century")
+        .unwrap()
+        .0
+        .clone();
+    corrections::apply(&mut deck, &[century]);
+    assert_eq!(
+        deck.parts[1].narration,
+        "Sentry catches it, and PSnack shows the threads. Their agents help."
+    );
+    assert!(
+        deck.parts[2].narration.contains("Sentry again"),
+        "every part the candidate was found in"
+    );
+
+    let s = summary::parse("TITLE: Unknown\nSPEAKER: Lauren Tan\nTHESIS:\n1. one\n- two\nthree");
+    assert_eq!(s.title, None);
+    assert_eq!(s.speaker.as_deref(), Some("Lauren Tan"));
+    assert_eq!(s.thesis, ["one", "two", "three"]);
 }

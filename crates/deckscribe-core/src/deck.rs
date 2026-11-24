@@ -3,8 +3,12 @@
 use anyhow::{Result, ensure};
 use serde::Serialize;
 
+use std::ops::Range;
+
+use crate::corrections::Candidate;
 use crate::description::SlideText;
 use crate::speech::Word;
+use crate::summary::Summary;
 use crate::time::Span;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -28,18 +32,21 @@ pub struct DeckPart {
     pub image_at: Option<f64>,
     /// Image path relative to the deck folder.
     pub image: Option<String>,
+    /// The words said during the part, as they read best (no fillers).
     pub narration: String,
+    /// The same words as indices into the deck's transcript.
+    pub words: Range<usize>,
     /// What a vision model read on the slide; slides only.
     pub slide_text: Option<SlideText>,
+    /// An earlier part showing the same slide, when the talk returns to it.
+    pub same_as: Option<usize>,
 }
 
 impl DeckPart {
-    /// A short name: the slide's title, else its first line of text.
+    /// The slide's own title, if the model read one. No fallback: a blank
+    /// title is better than a wrong one.
     pub fn title(&self) -> Option<&str> {
-        let t = self.slide_text.as_ref()?;
-        t.title
-            .as_deref()
-            .or_else(|| t.text.first().map(String::as_str))
+        self.slide_text.as_ref()?.title.as_deref()
     }
 }
 
@@ -67,6 +74,13 @@ pub struct Deck {
     pub parts: Vec<DeckPart>,
     /// Every word of the transcript, in order; empty if speech was off.
     pub words: Vec<Word>,
+    /// Title, speaker and main claims, if a text model was used.
+    pub summary: Option<Summary>,
+    /// Mishearings fixed in the narration (confirmed by a text model).
+    pub corrected: Vec<Candidate>,
+    /// Possible mishearings left as heard: a narration word close to a term on
+    /// the slide being shown.
+    pub possible: Vec<Candidate>,
 }
 
 impl Deck {
@@ -127,20 +141,29 @@ impl Deck {
             "the last part ends at {last:.1}s, before the recording ({:.1}s)",
             self.duration
         );
-        let narrated: usize = self
-            .parts
-            .iter()
-            .map(|p| p.narration.split_whitespace().count())
-            .sum();
-        let spoken: usize = self
-            .words
-            .iter()
-            .map(|w| w.text.split_whitespace().count())
-            .sum();
+        let mut next = 0;
+        for p in &self.parts {
+            ensure!(
+                p.words.start == next,
+                "part {}'s words do not follow the previous part's",
+                p.number
+            );
+            next = p.words.end.max(p.words.start);
+        }
         ensure!(
-            narrated == spoken,
-            "{spoken} words spoken but {narrated} narrated"
+            next == self.words.len(),
+            "{} words spoken but {next} narrated",
+            self.words.len()
         );
+        for p in &self.parts {
+            if let Some(n) = p.same_as {
+                ensure!(
+                    n < p.number,
+                    "part {} is marked the same as a later part",
+                    p.number
+                );
+            }
+        }
         Ok(())
     }
 }
