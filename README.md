@@ -7,7 +7,7 @@ locally.
 
 ```sh
 deckscribe talk.mp4
-deckscribe talk.mp4 --describe-url http://127.0.0.1:8012 --describe-model gemma --no-think
+deckscribe talk.mp4 --describe-url http://127.0.0.1:8012 --describe-model gemma
 ```
 
 ```
@@ -47,7 +47,7 @@ On 10 lectures with hand-annotated slide changes it scores F1 0.85 (within
 |---|---|
 | `--no-transcript` | slides only; no speech model, no GPU |
 | `--no-slides` | transcript only |
-| `--describe-url URL`, `--describe-model NAME`, `--no-think` | read each slide with a vision model |
+| `--describe-url URL`, `--describe-model NAME` | read each slide with a vision model |
 | `--no-mask`, `--mask x,y,w,h` | turn off overlay finding, or add a region to ignore |
 | `--no-split`, `--no-live-parts` | one mask for the whole video; fold camera stretches into slides |
 | `--min-slide`, `--change`, `--same` | tune slide detection |

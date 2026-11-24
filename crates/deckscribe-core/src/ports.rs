@@ -59,7 +59,9 @@ pub trait Describer {
 
 /// A text model that answers a prompt, for the optional summary.
 pub trait TextModel {
-    fn complete(&self, prompt: &str, max_tokens: u32) -> Result<String>;
+    /// `think`: let the model reason before answering, where it can. Slower,
+    /// better for whole-talk questions such as the summary.
+    fn complete(&self, prompt: &str, max_tokens: u32, think: bool) -> Result<String>;
 }
 
 /// Persists a deck in one format inside an output folder.

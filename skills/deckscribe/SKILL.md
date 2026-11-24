@@ -16,13 +16,15 @@ watching the video.
 
 1. Open `deck.md` first. It starts with a `[deckscribe · recording · N slides ·
    length · folder]` header and says how it was made. Then, when present:
-   **Summary** (talk, speaker, main claims, written by a text model) and
+   **Summary** (talk title, speaker, key ideas, written by a text model; a
+   title marked *proposed* is the model's, not the speaker's) and
    **Names and terms** (mishearings already corrected in **Said**, and possible
    ones left as heard). Then it lists every part on one line:
    `#7 (8:59–12:29) High-quality verification — "Something interesting about
    that skill is…"`, with *back to #N* when the talk returns to an earlier
    slide. After the list, each part has its image, **On the slide** (title,
-   text, visuals) and **Said** (the narration, fillers left out).
+   text, visuals; for a return, "Same slide as #N") and **Said** (the
+   narration, fillers left out).
 2. Open `contact-sheet.jpg` to see every slide at once, in order, left to right
    and top to bottom, each marked `#N`. Open `slides/slide-NN.jpg` for one slide
    at full size; `#8` is `slide-08.jpg`.
@@ -51,16 +53,19 @@ them in the recording.
 - Repeats of the same slide next to each other are merged into one part. Slides
   that change step by step (bullets appearing, a pen mark added) can still show
   up as consecutive parts with nearly the same image.
-- **Summary** is a small model's reading of the whole talk; check its claims
-  against the parts before quoting them.
-- Words spoken during a slide change go to the next slide, except that a
-  sentence started on one slide stays with it.
+- **Summary** is a small model's reading of the whole talk; check its key
+  ideas against the parts they cite before quoting them.
+- Words go to the slide on screen when they were said. Where a slide change
+  falls inside a sentence, the cut moves to the nearest end of a sentence
+  within 8 s; a longer sentence can still be split across two parts.
+- Ordinary words misheard as other ordinary words ("slot" for "slop") are
+  not corrected; fix them from context, preferring the slide's wording.
 
 ## Making a deck
 
 ```sh
 deckscribe talk.mp4                         # → talk.deck/, prints the path of deck.md
-deckscribe talk.mp4 --describe-url http://127.0.0.1:8012 --describe-model gemma --no-think --summarize
+deckscribe talk.mp4 --describe-url http://127.0.0.1:8012 --describe-model gemma --summarize
 deckscribe talk.mp4 --no-transcript         # slides only, no speech model
 deckscribe talk.mp4 --no-slides             # transcript only
 deckscribe skill                            # this guide

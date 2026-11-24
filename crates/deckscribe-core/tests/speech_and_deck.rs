@@ -271,7 +271,8 @@ fn mishearings_are_found_against_the_slide_on_screen() {
     deck.parts[0].narration = "You might know me as Potato. I work on Grogbot there.".into();
     deck.parts[1].narration =
         "Century catches it, and PSnack shows the threads. Their agents help.".into();
-    deck.parts[2].narration = "The line cooks matter, and Century again.".into();
+    deck.parts[2].narration = "The line cooks matter, and I will gloss over Grockbot again.".into();
+    deck.parts[2].slide_text = Some(reading("Kitchen", &["line cooks", "Glass"]));
     deck.words = [
         "You", "might", "know", "me", "as", "Potato.", "I", "work", "on", "Grogbot", "there.",
         "Century", "catches", "it,", "and", "PSnack", "shows", "the", "threads.", "Their",
@@ -288,37 +289,63 @@ fn mishearings_are_found_against_the_slide_on_screen() {
     for want in [
         ("Potato", "poteto"),
         ("Grogbot", "Grok Bot"),
-        ("Century", "Sentry"),
         ("PSnack", "pstack"),
+        ("Grockbot", "Grok Bot"),
     ] {
         assert!(found.contains(&want), "{want:?} not in {found:?}");
     }
+    // Ordinary English words are never changed, even when a slide shows a
+    // word that sounds like them: "Century" stays, "gloss over" stays.
     assert!(
-        found.iter().all(|(h, _)| *h != "Their" && *h != "agents"),
-        "common words stay: {found:?}"
+        found
+            .iter()
+            .all(|(h, _)| !["Century", "gloss", "Their", "agents"].contains(h)),
+        "{found:?}"
     );
-    assert!(
-        found.iter().all(|(_, t)| !t.contains("line")),
-        "ordinary words are no target: {found:?}"
-    );
-    let century = cands
+    let grog = cands
         .iter()
-        .find(|(c, _)| c.heard == "Century")
+        .find(|(c, _)| c.heard == "Grogbot")
         .unwrap()
         .0
         .clone();
-    corrections::apply(&mut deck, &[century]);
+    corrections::apply(&mut deck, &[grog]);
     assert_eq!(
-        deck.parts[1].narration,
-        "Sentry catches it, and PSnack shows the threads. Their agents help."
-    );
-    assert!(
-        deck.parts[2].narration.contains("Sentry again"),
-        "every part the candidate was found in"
+        deck.parts[0].narration,
+        "You might know me as Potato. I work on Grok Bot there."
     );
 
-    let s = summary::parse("TITLE: Unknown\nSPEAKER: Lauren Tan\nTHESIS:\n1. one\n- two\nthree");
-    assert_eq!(s.title, None);
+    let s = summary::parse(
+        "TITLE: Trusting your agents (proposed)\nSPEAKER: Lauren Tan\nKEY IDEAS:\n1. one\n- two\nthree",
+    );
+    assert_eq!(s.title.as_deref(), Some("Trusting your agents"));
+    assert!(s.title_proposed);
     assert_eq!(s.speaker.as_deref(), Some("Lauren Tan"));
-    assert_eq!(s.thesis, ["one", "two", "three"]);
+    assert_eq!(s.key_ideas, ["one", "two", "three"]);
+}
+
+#[test]
+fn a_cut_inside_a_sentence_moves_to_the_nearest_sentence_end() {
+    let spans = [Span::new(0.0, 10.0), Span::new(10.0, 20.0)];
+    // "…a scale or | continuum …": the sentence ends 5 s after the change.
+    let words = [
+        w(7.0, 7.5, "Trust"),
+        w(7.5, 8.0, "is"),
+        w(8.0, 8.5, "a"),
+        w(8.5, 9.0, "scale"),
+        w(9.0, 9.5, "or"),
+        w(10.5, 11.0, "continuum"),
+        w(11.0, 11.5, "between"),
+        w(14.5, 15.0, "pieces."),
+        w(15.5, 16.0, "Next."),
+    ];
+    assert_eq!(assign(&words, &spans, 8.0), [0..8, 8..9]);
+    // A sentence end just before the change is nearer: the cut moves back.
+    let words = [
+        w(8.5, 9.0, "Done."),
+        w(9.2, 9.6, "So"),
+        w(9.6, 9.9, "the"),
+        w(10.1, 10.4, "last"),
+        w(18.0, 18.5, "thing."),
+    ];
+    assert_eq!(assign(&words, &spans, 8.0), [0..1, 1..5]);
 }

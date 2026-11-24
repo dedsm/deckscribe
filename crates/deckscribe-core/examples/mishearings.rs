@@ -77,6 +77,33 @@ fn main() {
         corrected: vec![],
         possible: vec![],
     };
+    if std::env::args().any(|a| a == "--cuts") {
+        let spans: Vec<Span> = deck.parts.iter().map(|p| p.span).collect();
+        let ranges = deckscribe_core::alignment::assign(
+            &deck.words,
+            &spans,
+            deckscribe_core::alignment::SENTENCE_SNAP,
+        );
+        for (k, r) in ranges.iter().enumerate().skip(1) {
+            let prev = &ranges[k - 1];
+            let tail: Vec<&str> = deck.words[prev.end.saturating_sub(4).max(prev.start)..prev.end]
+                .iter()
+                .map(|w| w.text.as_str())
+                .collect();
+            let head: Vec<&str> = deck.words[r.start..(r.start + 4).min(r.end)]
+                .iter()
+                .map(|w| w.text.as_str())
+                .collect();
+            println!(
+                "#{:<2} …{:<40} | #{:<2} {}…",
+                k,
+                tail.join(" "),
+                k + 1,
+                head.join(" ")
+            );
+        }
+        return;
+    }
     for (c, s) in candidates(&deck) {
         let tag = if s == Strength::Strong {
             "fix "

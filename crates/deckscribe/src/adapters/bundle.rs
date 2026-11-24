@@ -113,6 +113,15 @@ fn utc(unix: u64) -> String {
     )
 }
 
+/// A part's title, or for a return, the title of the part it returns to.
+fn title_of(deck: &Deck, p: &DeckPart) -> Option<String> {
+    let src = p
+        .same_as
+        .and_then(|n| deck.parts.iter().find(|q| q.number == n))
+        .unwrap_or(p);
+    src.title().map(str::to_string)
+}
+
 fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
     let a = &deck.about;
     let described = deck.parts.iter().any(|p| p.slide_text.is_some());
@@ -125,13 +134,21 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
         deck.slides(),
         clock(deck.duration)
     );
-    let _ = writeln!(s, "# {}\n", deck.recording);
+    let heading = deck
+        .summary
+        .as_ref()
+        .and_then(|sm| sm.title.clone())
+        .unwrap_or_else(|| deck.recording.clone());
+    let _ = writeln!(s, "# {heading}\n");
+    let mut counts = vec![format!("{} slides", deck.slides())];
+    if deck.live_parts() > 0 {
+        counts.push(format!("{} speaker or video parts", deck.live_parts()));
+    }
     let _ = write!(
         s,
-        "A recorded talk turned into the slides that were shown and what was said over each: \
-         {} slides and {} speaker or video parts over {}. Made by {} on {}",
-        deck.slides(),
-        deck.live_parts(),
+        "{} turned into the slides that were shown and what was said over each: {} over {}. Made by {} on {}",
+        deck.recording,
+        counts.join(" and "),
         clock(deck.duration),
         a.tool,
         utc(a.created_unix)
@@ -153,14 +170,19 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
     if let Some(sm) = &deck.summary {
         s.push_str("## Summary\n\n");
         if let Some(t) = &sm.title {
-            let _ = writeln!(s, "**Talk:** {t}  ");
+            let note = if sm.title_proposed {
+                " (proposed; no slide states a title)"
+            } else {
+                ""
+            };
+            let _ = writeln!(s, "**Talk:** {t}{note}  ");
         }
         if let Some(sp) = &sm.speaker {
             let _ = writeln!(s, "**Speaker:** {sp}  ");
         }
-        if !sm.thesis.is_empty() {
-            s.push_str("\n**Main claims:**\n\n");
-            for t in &sm.thesis {
+        if !sm.key_ideas.is_empty() {
+            s.push_str("\n**Key ideas:**\n\n");
+            for t in &sm.key_ideas {
                 let _ = writeln!(s, "- {t}");
             }
         }
@@ -236,13 +258,14 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
              and technical terms; when it disagrees with the slide on a name, trust the slide.\n",
         );
         s.push_str(
-            "- Words spoken during a slide change belong to the slide that comes next, except that \
-             a sentence begun on one slide stays with it.\n",
+            "- Words go to the slide on screen when they were said. Where a slide change falls inside \
+             a sentence, the cut moves to the nearest end of a sentence within 8 s; a longer \
+             sentence can still be split.\n",
         );
     }
     if deck.parts.iter().any(|p| p.same_as.is_some()) {
         s.push_str(
-            "- A part marked *back to #N* returns to a slide already shown; its slide text repeats #N's.\n",
+            "- A part marked *back to #N* returns to a slide already shown; see #N for its text.\n",
         );
     }
     if !a.masked.is_empty() {
@@ -270,7 +293,7 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
         if p.kind != PartKind::Slide {
             let _ = write!(line, " [{}]", kind_label(p));
         }
-        if let Some(t) = p.title() {
+        if let Some(t) = title_of(deck, p) {
             let _ = write!(line, " {t}");
         }
         if let Some(n) = p.same_as {
@@ -285,7 +308,7 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
 
     for p in &deck.parts {
         let _ = write!(s, "\n---\n\n## {}", moment(p));
-        match (p.kind, p.title()) {
+        match (p.kind, title_of(deck, p)) {
             (PartKind::Slide, Some(t)) => {
                 let _ = write!(s, " · {t}");
             }
@@ -301,7 +324,9 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
         if let Some(img) = &p.image {
             let _ = writeln!(s, "![#{}]({img})\n", p.number);
         }
-        if let Some(t) = &p.slide_text {
+        if let Some(n) = p.same_as {
+            let _ = writeln!(s, "### On the slide\n\nSame slide as #{n}.\n");
+        } else if let Some(t) = &p.slide_text {
             s.push_str("### On the slide\n\n");
             if let Some(title) = &t.title {
                 let _ = writeln!(s, "**Title:** {title}\n");

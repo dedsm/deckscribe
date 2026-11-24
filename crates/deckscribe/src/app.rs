@@ -233,6 +233,10 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
             })
             .map(|e| e.part.number);
         drafts[k].part.same_as = earlier;
+        if earlier.is_some() {
+            // The earlier part's reading stands for both.
+            drafts[k].part.slide_text = None;
+        }
     }
     if !sheet.is_empty() {
         ad.stills
@@ -294,9 +298,11 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
     );
     if let Some(model) = ad.text_model {
         let t = Instant::now();
-        deck.summary = Some(summary::parse(
-            &model.complete(&summary::prompt(&deck), 600)?,
-        ));
+        deck.summary = Some(summary::parse(&model.complete(
+            &summary::prompt(&deck),
+            6000,
+            true,
+        )?));
         eprintln!("summarized in {:.0}s", t.elapsed().as_secs_f64());
     }
 

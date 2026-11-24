@@ -41,9 +41,6 @@ struct Cli {
     /// Model name to ask the server for.
     #[arg(long, default_value = "gemma")]
     describe_model: String,
-    /// Ask a llama.cpp server to answer without reasoning first (faster).
-    #[arg(long)]
-    no_think: bool,
     /// Add a summary (title, speaker, main claims) and fix misheard terms the
     /// slides spell out, using the same server and model as --describe-url.
     #[arg(long, requires = "describe_url")]
@@ -110,9 +107,10 @@ fn main() -> Result<()> {
     let media = Ffmpeg::new(&recording);
     let recognizer = make_recognizer(&cli)?;
     #[cfg(feature = "describe")]
-    let describer = cli.describe_url.as_deref().map(|url| {
-        deckscribe::adapters::openai_vision::OpenAi::new(url, &cli.describe_model, cli.no_think)
-    });
+    let describer = cli
+        .describe_url
+        .as_deref()
+        .map(|url| deckscribe::adapters::openai_vision::OpenAi::new(url, &cli.describe_model));
     #[cfg(not(feature = "describe"))]
     if cli.describe_url.is_some() {
         anyhow::bail!("this build cannot read slides; rebuild with the \"describe\" feature");

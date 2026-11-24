@@ -1,13 +1,16 @@
-//! Mishearings the slides can fix. Speech recognition mangles names and
-//! terms ("Grogbot" for "Grok Bot", "Century" for "Sentry") that the slide on
-//! screen spells out. Candidates are found here, without a model: a narration
-//! word (or two joined) that is close in spelling or sound to a term on the
-//! slide being shown or its neighbours, where the slide's term never appears
-//! in the transcript as written. Close ones are applied; the rest are listed.
+//! Mishearings the slides can fix. Speech recognition mangles names it has
+//! never seen ("Grogpod", "Rockbot", "GraphBot" for "Grok Bot"; "Boone" for
+//! "Dune") that the slides spell out. A heard word is corrected to a name on a
+//! slide when the two sound alike, it is not an ordinary English word, and the
+//! recognizer did not write it often enough to be a word it knows. Ordinary
+//! words misheard as other words ("slot" for "slop") are left alone: telling
+//! them apart needs an understanding of what was meant.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+
+use std::sync::OnceLock;
 
 use crate::deck::Deck;
 
@@ -41,6 +44,13 @@ const COMMON: &str = "about above after again against also always among another 
     reply share send save edit cancel close delete copy paste search settings page home back next done \
     open view file files help menu more less login logout sign submit";
 
+/// Ordinary English words, lowercase (SCOWL sizes 10–50; see
+/// scripts/update-wordlist.sh).
+fn english() -> &'static HashSet<&'static str> {
+    static WORDS: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    WORDS.get_or_init(|| include_str!("../data/english-words.txt").lines().collect())
+}
+
 fn key(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_alphanumeric())
@@ -51,20 +61,27 @@ fn key(s: &str) -> String {
 fn strip(w: &str) -> &str {
     let w = w.trim_matches(|c: char| !c.is_alphanumeric());
     // A possessive is the same name: "Grockbot's".
-    w.strip_suffix("'s").or_else(|| w.strip_suffix("’s")).unwrap_or(w)
+    w.strip_suffix("'s")
+        .or_else(|| w.strip_suffix("’s"))
+        .unwrap_or(w)
 }
 
-/// A rough sound key: first letter kept, soft c to s, ph to f, k/q/ck to k,
-/// z to s, then vowels, h, w and y dropped and doubles collapsed.
+/// A rough sound key: soft c to s, ph to f, ck/c/q to k, x to ks, voiced
+/// consonants folded into unvoiced ones (b→p, d→t, g→k, v→f, z→s), then
+/// vowels, h, w and y dropped after the first letter and doubles collapsed.
+/// "Grok Bot", "Grogpod" and "Grockbot" all give "krkpt".
 fn sound(k: &str) -> String {
-    let s = k.replace("ph", "f").replace("ck", "k");
+    let s = k.replace("ph", "f").replace("ck", "k").replace('x', "ks");
     let chars: Vec<char> = s.chars().collect();
     let mut out = String::new();
     for (i, &c) in chars.iter().enumerate() {
         let next = chars.get(i + 1).copied();
         let c = match c {
             'c' if matches!(next, Some('e' | 'i' | 'y')) => 's',
-            'c' | 'q' => 'k',
+            'c' | 'q' | 'g' => 'k',
+            'b' => 'p',
+            'd' => 't',
+            'v' => 'f',
             'z' => 's',
             _ => c,
         };
@@ -92,23 +109,6 @@ fn distance(a: &str, b: &str) -> usize {
         prev = cur;
     }
     prev[b.len()]
-}
-
-fn close(heard: &str, term: &str) -> bool {
-    if heard == term || heard.starts_with(term) || term.starts_with(heard) {
-        return false;
-    }
-    let n = heard.chars().count().max(term.chars().count());
-    let limit = if n <= 5 {
-        1
-    } else if n <= 9 {
-        2
-    } else {
-        3
-    };
-    let d = distance(heard, term);
-    let same_start = heard.chars().next() == term.chars().next();
-    (d <= limit && same_start) || d <= 1 || (sound(heard) == sound(term) && d <= limit + 1)
 }
 
 /// A slide term worth correcting towards: a name or a piece of jargon, which
@@ -162,7 +162,8 @@ fn terms(lines: &[&str], common: &HashSet<&str>) -> Vec<Term> {
             }
             if let Some(&(_, n)) = ws.get(i + 1) {
                 let caps = |s: &str| s.chars().next().is_some_and(char::is_uppercase);
-                if caps(w) && caps(n) {
+                let unusual = |s: &str| !english().contains(key(s).as_str());
+                if caps(w) && caps(n) && (unusual(w) || unusual(n)) {
                     out.push(Term {
                         key: key(w) + &key(n),
                         text: format!("{w} {n}"),
@@ -226,25 +227,24 @@ pub fn candidates(deck: &Deck) -> Vec<(Candidate, Strength)> {
     for k in &said {
         *written.entry(k.as_str()).or_default() += 1;
     }
-    // A name the recognizer wrote correctly 4 or more times is one it knows.
-    let pairs: Vec<String> = said.windows(2).map(|w| w[0].clone() + &w[1]).collect();
-    let spelled = |t: &Term| {
-        let n = if t.pair {
-            pairs.iter().filter(|p| **p == t.key).count()
-        } else {
-            written.get(t.key.as_str()).copied().unwrap_or(0)
-        };
-        n >= 4
-    };
     let mut targets: Vec<Term> = (0..deck.parts.len())
         .flat_map(|k| terms(&lines_of(k), &common))
         .collect();
-    targets.retain(|t| !spelled(t));
     targets.sort_by(|a, b| a.key.cmp(&b.key).then(b.pair.cmp(&a.pair)));
     targets.dedup_by(|a, b| a.key == b.key);
 
+    // The names on the slide shown during each part.
+    let near_slides: Vec<HashSet<String>> = (0..deck.parts.len())
+        .map(|k| {
+            (k.saturating_sub(1)..=k + 1)
+                .flat_map(|j| terms(&lines_of(j), &common))
+                .map(|t| t.key)
+                .collect()
+        })
+        .collect();
+
     let mut found: HashMap<(String, String), (Vec<usize>, Strength)> = HashMap::new();
-    for p in &deck.parts {
+    for (k, p) in deck.parts.iter().enumerate() {
         for w in p
             .narration
             .split_whitespace()
@@ -252,22 +252,46 @@ pub fn candidates(deck: &Deck) -> Vec<(Candidate, Strength)> {
             .filter(|w| !w.is_empty())
         {
             let ku = key(w);
-            if ku.chars().count() < 4 || shown.contains(&ku) || common.contains(ku.as_str()) {
+            // Contractions are ordinary words.
+            if ku.chars().count() < 4 || w.contains(['\'', '’']) {
                 continue;
             }
+            // Words a slide shows and very common words are never corrected;
+            // other English words only towards a name they sound exactly like.
+            if shown.contains(&ku) || common.contains(ku.as_str()) {
+                continue;
+            }
+            let ordinary = english().contains(ku.as_str());
             let frequent = written.get(ku.as_str()).copied().unwrap_or(0) >= 4;
+            let su = sound(&ku);
             for t in &targets {
                 // A two-word name written as one word is the same name.
                 let spacing = t.pair && ku == t.key;
-                if !spacing && (frequent || !close(&ku, &t.key) || same_stem(&ku, &t.key)) {
+                if !spacing && (frequent || same_stem(&ku, &t.key)) {
                     continue;
                 }
-                let strong = spacing || distance(&ku, &t.key) <= 1 || sound(&ku) == sound(&t.key);
-                let strength = if strong {
-                    Strength::Strong
-                } else {
-                    Strength::Weak
-                };
+                let st = sound(&t.key);
+                let near = distance(&su, &st);
+                let here = near_slides[k].contains(&t.key);
+                if ordinary && !(here && near == 0 && !english().contains(t.key.as_str())) {
+                    continue;
+                }
+                let strength =
+                    if spacing || (near == 0 && st.len() >= 3) || (near == 1 && st.len() >= 4) {
+                        Strength::Strong
+                    } else if here
+                        && near <= 1
+                        && st.len() >= 2
+                        && w.chars().next().is_some_and(char::is_uppercase)
+                    {
+                        // A short name on a slide nearby, heard as a name: "Boone"
+                        // or "June" for "Dune".
+                        Strength::Strong
+                    } else if here && distance(&ku, &t.key) <= 2 && st.len() >= 3 {
+                        Strength::Weak
+                    } else {
+                        continue;
+                    };
                 let e = found
                     .entry((w.to_string(), t.text.clone()))
                     .or_insert((Vec::new(), strength));

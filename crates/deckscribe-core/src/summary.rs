@@ -11,9 +11,12 @@ use crate::deck::{Deck, PartKind};
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Summary {
     pub title: Option<String>,
+    /// The title was proposed by the model; no slide or the speaker states one.
+    pub title_proposed: bool,
     pub speaker: Option<String>,
-    /// The talk's main claims, one sentence each.
-    pub thesis: Vec<String>,
+    /// What is specific to this talk: techniques, rules, examples, named
+    /// things, each with the part it comes from.
+    pub key_ideas: Vec<String>,
 }
 
 /// The request: every part's slide text and narration, then the format.
@@ -38,10 +41,13 @@ pub fn prompt(deck: &Deck) -> String {
     }
     s.push_str(
         "Answer in exactly this format and nothing else:\n\
-         TITLE: the talk's title, if a slide or the speaker states one (or Unknown).\n\
+         TITLE: the talk's title as a slide or the speaker states it. If none is stated, propose a \
+         short, specific title and add (proposed) after it.\n\
          SPEAKER: the speaker's full name, as the slides or the introduction give it (or Unknown).\n\
-         THESIS:\n\
-         - the talk's main claims: three lines, one sentence each.\n",
+         KEY IDEAS:\n\
+         - five lines. Each names one concrete thing from this talk: a technique, a rule, a \
+         numbered process, a tool, an example or a role, with what it is for, ending with the part \
+         it comes from, like (#9). Nothing that would fit any talk on the same subject.\n",
     );
     s
 }
@@ -54,25 +60,33 @@ fn value(s: &str) -> Option<String> {
 
 pub fn parse(reply: &str) -> Summary {
     let mut out = Summary::default();
-    let mut in_thesis = false;
+    let mut in_list = false;
     for line in reply.lines() {
-        let l = line.trim().trim_start_matches("**").replace("**", "");
+        let l = line.trim().replace("**", "");
         let l = l.trim();
         if let Some(v) = l.strip_prefix("TITLE:") {
+            let v = v.trim();
+            let proposed = v.to_ascii_lowercase().ends_with("(proposed)");
+            let v = if proposed {
+                v[..v.len() - "(proposed)".len()].trim()
+            } else {
+                v
+            };
             out.title = value(v);
-            in_thesis = false;
+            out.title_proposed = proposed && out.title.is_some();
+            in_list = false;
         } else if let Some(v) = l.strip_prefix("SPEAKER:") {
             out.speaker = value(v);
-            in_thesis = false;
-        } else if l.starts_with("THESIS:") {
-            in_thesis = true;
-        } else if in_thesis && !l.is_empty() {
+            in_list = false;
+        } else if l.starts_with("KEY IDEAS:") || l.starts_with("THESIS:") {
+            in_list = true;
+        } else if in_list && !l.is_empty() {
             let item = l
                 .trim_start_matches(['-', '*', '•'])
                 .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ')');
-            out.thesis.extend(value(item));
+            out.key_ideas.extend(value(item));
         }
     }
-    out.thesis.truncate(5);
+    out.key_ideas.truncate(7);
     out
 }

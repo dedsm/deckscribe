@@ -13,34 +13,44 @@ pub struct OpenAi {
     agent: ureq::Agent,
     url: String,
     model: String,
-    /// Ask llama.cpp to answer directly instead of reasoning first. Other
-    /// servers may reject the extra field, so it is opt-in.
-    no_think: bool,
+    /// The server is llama.cpp's llama-server, which takes a per-request
+    /// switch for reasoning. Other servers get no extra fields.
+    llama_cpp: bool,
 }
 
 impl OpenAi {
-    pub fn new(base_url: &str, model: &str, no_think: bool) -> Self {
+    pub fn new(base_url: &str, model: &str) -> Self {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(600)))
             .build()
             .into();
+        let base = base_url.trim_end_matches('/');
+        // llama-server answers /props with its generation settings.
+        let llama_cpp = agent
+            .get(&format!("{base}/props"))
+            .call()
+            .ok()
+            .and_then(|mut r| r.body_mut().read_json::<Value>().ok())
+            .is_some_and(|v| v.get("default_generation_settings").is_some());
         OpenAi {
             agent,
-            url: format!("{}/v1/chat/completions", base_url.trim_end_matches('/')),
+            url: format!("{base}/v1/chat/completions"),
             model: model.to_string(),
-            no_think,
+            llama_cpp,
         }
     }
 
-    fn chat(&self, content: Value, max_tokens: u32) -> Result<String> {
+    fn chat(&self, content: Value, max_tokens: u32, think: bool) -> Result<String> {
         let mut body = json!({
             "model": self.model,
             "max_tokens": max_tokens,
             "temperature": 0,
             "messages": [{"role": "user", "content": content}],
         });
-        if self.no_think {
-            body["chat_template_kwargs"] = json!({"enable_thinking": false});
+        // llama.cpp reasons before answering by default: off for reading
+        // slides, on where it helps.
+        if self.llama_cpp {
+            body["chat_template_kwargs"] = json!({"enable_thinking": think});
         }
         let reply: Value = self
             .agent
@@ -68,7 +78,7 @@ impl Describer for OpenAi {
             })
             .collect();
         content.push(json!({"type": "text", "text": prompt}));
-        self.chat(Value::Array(content), 700)
+        self.chat(Value::Array(content), 700, false)
     }
 
     fn name(&self) -> String {
@@ -78,7 +88,7 @@ impl Describer for OpenAi {
 }
 
 impl TextModel for OpenAi {
-    fn complete(&self, prompt: &str, max_tokens: u32) -> Result<String> {
-        self.chat(json!(prompt), max_tokens)
+    fn complete(&self, prompt: &str, max_tokens: u32, think: bool) -> Result<String> {
+        self.chat(json!(prompt), max_tokens, think)
     }
 }
