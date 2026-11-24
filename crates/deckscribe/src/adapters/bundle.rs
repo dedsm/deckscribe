@@ -228,6 +228,12 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
 
     s.push_str("## How to read this deck\n\n");
     s.push_str(
+        "- This deck is made by small local models and is best effort; read it with judgement. \
+         Speech recognition errors remain in **Said** where the right word is not on a slide \
+         (an ordinary word heard as another, such as \"slot\" for \"slop\" or \"tech dep\" for \
+         \"tech debt\"): correct them from context.\n",
+    );
+    s.push_str(
         "- Parts are numbered. Refer to them the way the list below does, as `#N (m:ss)`, \
          so a person can find the moment in the recording.\n",
     );

@@ -94,6 +94,9 @@ pub fn parse(reply: &str) -> SlideText {
         }
     }
     out.visuals = none_if_empty(&visuals);
+    out.text = join_wrapped(std::mem::take(&mut out.text));
+    out.title = out.title.map(|t| tidy(&t));
+    out.text = out.text.iter().map(|t| tidy(t)).collect();
     if out.title.is_none()
         && out.text.is_empty()
         && out.visuals.is_none()
@@ -192,4 +195,50 @@ pub fn parse_same(reply: &str) -> Option<bool> {
     } else {
         None
     }
+}
+
+/// Words a wrapped line can end on but a finished phrase rarely does.
+const DANGLING: &[&str] = &[
+    "a", "an", "the", "and", "or", "but", "of", "for", "to", "in", "on", "at", "by", "with",
+    "from", "into", "that", "which", "when", "where", "while", "if", "as", "is", "are", "can",
+    "will", "your", "our", "their", "its", "this", "these",
+];
+
+/// Joins lines the model split where the slide wrapped a sentence: a line
+/// starting lowercase continues the one before it when that one ends on a word
+/// like "for" or "the", or is long and has no closing punctuation. Short list
+/// items ("what exists" / "how users reach it") stay separate.
+pub fn join_wrapped(lines: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    for line in lines {
+        let continues = line.chars().next().is_some_and(char::is_lowercase)
+            && out.last().is_some_and(|prev: &String| {
+                let last = prev.split_whitespace().last().unwrap_or("").to_lowercase();
+                let open = !prev.trim_end().ends_with(['.', '!', '?', ':', ';', ')']);
+                open && (DANGLING.contains(&last.as_str()) || prev.chars().count() >= 40)
+            });
+        match out.last_mut() {
+            Some(prev) if continues => {
+                prev.push(' ');
+                prev.push_str(&line);
+            }
+            _ => out.push(line),
+        }
+    }
+    out
+}
+
+/// "Thread # glass-oncall" as the slide shows it: "Thread #glass-oncall".
+fn tidy(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        if c == '#' && out.len() > 1 {
+            while chars.peek() == Some(&' ') {
+                chars.next();
+            }
+        }
+    }
+    out
 }

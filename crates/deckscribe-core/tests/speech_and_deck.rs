@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 use deckscribe_core::alignment::{assign, narrate};
-use deckscribe_core::description::{drop_chrome, parse, parse_same, same_slide, similarity};
+use deckscribe_core::description::{
+    drop_chrome, join_wrapped, parse, parse_same, same_slide, similarity,
+};
 use deckscribe_core::ports::Recognizer;
 use deckscribe_core::speech::readable;
 use deckscribe_core::speech::{AUDIO_RATE, pieces, transcribe};
@@ -348,4 +350,34 @@ fn a_cut_inside_a_sentence_moves_to_the_nearest_sentence_end() {
         w(18.0, 18.5, "thing."),
     ];
     assert_eq!(assign(&words, &spans, 8.0), [0..1, 1..5]);
+}
+
+#[test]
+fn wrapped_slide_lines_are_joined_and_lists_are_not() {
+    let lines = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        join_wrapped(lines(&["Architecture for", "agent-sized context"])),
+        ["Architecture for agent-sized context"]
+    );
+    assert_eq!(
+        join_wrapped(lines(&[
+            "Don't show the confirmation dialog again even when I explicitly",
+            "close it."
+        ])),
+        ["Don't show the confirmation dialog again even when I explicitly close it."]
+    );
+    assert_eq!(
+        join_wrapped(lines(&["what exists", "how users reach it"])),
+        ["what exists", "how users reach it"]
+    );
+    assert_eq!(
+        join_wrapped(lines(&["1. trust", "2. how to trust your agents more"])).len(),
+        2
+    );
+    assert_eq!(
+        parse("TITLE: Thread # glass-oncall-assistant")
+            .title
+            .as_deref(),
+        Some("Thread #glass-oncall-assistant")
+    );
 }

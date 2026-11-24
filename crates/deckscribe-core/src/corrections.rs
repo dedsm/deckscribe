@@ -256,6 +256,19 @@ pub fn candidates(deck: &Deck) -> Vec<(Candidate, Strength)> {
             if ku.chars().count() < 4 || w.contains(['\'', '’']) {
                 continue;
             }
+            // A name heard with other capitals takes the slide's: "PStack" for "pstack".
+            if let Some(t) = targets
+                .iter()
+                .find(|t| !t.pair && t.key == ku && t.text != w && !english().contains(ku.as_str()))
+            {
+                let e = found
+                    .entry((w.to_string(), t.text.clone()))
+                    .or_insert((Vec::new(), Strength::Strong));
+                if !e.0.contains(&p.number) {
+                    e.0.push(p.number);
+                }
+                continue;
+            }
             // Words a slide shows and very common words are never corrected;
             // other English words only towards a name they sound exactly like.
             if shown.contains(&ku) || common.contains(ku.as_str()) {

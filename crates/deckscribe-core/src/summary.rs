@@ -45,9 +45,11 @@ pub fn prompt(deck: &Deck) -> String {
          short, specific title and add (proposed) after it.\n\
          SPEAKER: the speaker's full name, as the slides or the introduction give it (or Unknown).\n\
          KEY IDEAS:\n\
-         - five lines. Each names one concrete thing from this talk: a technique, a rule, a \
-         numbered process, a tool, an example or a role, with what it is for, ending with the part \
-         it comes from, like (#9). Nothing that would fit any talk on the same subject.\n",
+         - six lines. Each names one concrete thing from this talk that a listener could apply in \
+         their own work: a practice, a rule (something required or banned), a process with its steps, \
+         a tool and how it combines with others, or a role. Say what it is for, and end with the part \
+         it comes from, like (#9). Prefer rules and practices over analogies, and nothing that would \
+         fit any talk on the same subject.\n",
     );
     s
 }
