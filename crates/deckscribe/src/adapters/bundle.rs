@@ -171,7 +171,7 @@ fn markdown(deck: &Deck, folder: &str, has_sheet: bool) -> String {
         s.push_str("## Names and terms\n\n");
         if !deck.corrected.is_empty() {
             s.push_str(
-                "Corrected in **Said**: terms the slides spell out that the transcription never got right.\n\n\
+                "Corrected in **Said**: names the slides spell out that the transcription got wrong.\n\n\
                  | Heard | On the slide | Parts |\n|---|---|---|\n",
             );
             for c in &deck.corrected {

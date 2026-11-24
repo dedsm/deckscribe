@@ -49,7 +49,9 @@ fn key(s: &str) -> String {
 }
 
 fn strip(w: &str) -> &str {
-    w.trim_matches(|c: char| !c.is_alphanumeric())
+    let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+    // A possessive is the same name: "Grockbot's".
+    w.strip_suffix("'s").or_else(|| w.strip_suffix("’s")).unwrap_or(w)
 }
 
 /// A rough sound key: first letter kept, soft c to s, ph to f, k/q/ck to k,
