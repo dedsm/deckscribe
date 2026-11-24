@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/deckscribe/deckscribe"
+repository = "https://github.com/dedsm/deckscribe"
 
 [workspace.dependencies]
 anyhow = "1"
