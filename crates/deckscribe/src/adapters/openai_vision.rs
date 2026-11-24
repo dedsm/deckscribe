@@ -19,7 +19,10 @@ pub struct OpenAiVision {
 
 impl OpenAiVision {
     pub fn new(base_url: &str, model: &str, no_think: bool) -> Self {
-        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(300))).build().into();
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(300)))
+            .build()
+            .into();
         OpenAiVision {
             agent,
             url: format!("{}/v1/chat/completions", base_url.trim_end_matches('/')),
@@ -51,7 +54,13 @@ impl Describer for OpenAiVision {
             .with_context(|| format!("asking {} for a description", self.url))?
             .body_mut()
             .read_json()?;
-        let text = reply["choices"][0]["message"]["content"].as_str().context("the description reply had no text")?;
+        let text = reply["choices"][0]["message"]["content"]
+            .as_str()
+            .context("the description reply had no text")?;
         Ok(text.trim().to_string())
+    }
+
+    fn name(&self) -> String {
+        format!("{} at {}", self.model, self.url)
     }
 }

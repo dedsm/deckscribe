@@ -1,33 +1,29 @@
 //! deckscribe: a recorded talk in; for every slide an image, the words spoken
-//! over it and, optionally, a description out.
+//! over it and, optionally, what is on it out, as a folder written for agents.
 
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
-use deckscribe::adapters::{ffmpeg::Ffmpeg, output};
+use clap::{Parser, Subcommand};
+use deckscribe::adapters::{bundle::Bundle, ffmpeg::Ffmpeg};
 use deckscribe::app::{self, Adapters, Request};
 use deckscribe_core::Settings;
-use deckscribe_core::ports::DeckWriter;
 use deckscribe_core::segmentation::overlays::BlockBox;
 
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Format {
-    Md,
-    Json,
-}
+/// The guide for agents reading a deck or running deckscribe.
+const SKILL: &str = include_str!("../../../skills/deckscribe/SKILL.md");
 
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// The recording.
-    recording: PathBuf,
-    /// Output folder (default: <recording name>-deck next to the recording).
+    #[arg(required = true)]
+    recording: Option<PathBuf>,
+    /// Output folder (default: <recording name>.deck next to the recording).
     #[arg(short, long)]
     out: Option<PathBuf>,
-    /// Which files to write.
-    #[arg(long, value_enum, value_delimiter = ',', default_values = ["md", "json"])]
-    format: Vec<Format>,
 
     /// Transcript only: do not look for slides.
     #[arg(long)]
@@ -39,10 +35,10 @@ struct Cli {
     #[arg(long)]
     model: Option<PathBuf>,
 
-    /// Describe each slide with this OpenAI-compatible server, e.g. http://127.0.0.1:8012.
+    /// Read each slide with this OpenAI-compatible server, e.g. http://127.0.0.1:8012.
     #[arg(long)]
     describe_url: Option<String>,
-    /// Model name to ask the description server for.
+    /// Model name to ask the server for.
     #[arg(long, default_value = "gemma")]
     describe_model: String,
     /// Ask a llama.cpp server to answer without reasoning first (faster).
@@ -78,9 +74,23 @@ struct Cli {
     debug: bool,
 }
 
+#[derive(Subcommand)]
+enum Command {
+    /// Print the guide for agents: how to read a deck and run deckscribe.
+    Skill,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let out = cli.out.clone().unwrap_or_else(|| app::default_out(&cli.recording));
+    if let Some(Command::Skill) = cli.command {
+        print!("{SKILL}");
+        return Ok(());
+    }
+    let recording = cli.recording.clone().expect("clap requires a recording");
+    let out = cli
+        .out
+        .clone()
+        .unwrap_or_else(|| app::default_out(&recording));
     let settings = Settings {
         find_overlays: !cli.no_mask,
         split_at_cuts: !cli.no_split,
@@ -93,39 +103,47 @@ fn main() -> Result<()> {
         ..Settings::default()
     };
 
-    let media = Ffmpeg::new(&cli.recording);
+    let media = Ffmpeg::new(&recording);
     let recognizer = make_recognizer(&cli)?;
     #[cfg(feature = "describe")]
-    let describer = cli
-        .describe_url
-        .as_deref()
-        .map(|url| deckscribe::adapters::openai_vision::OpenAiVision::new(url, &cli.describe_model, cli.no_think));
+    let describer = cli.describe_url.as_deref().map(|url| {
+        deckscribe::adapters::openai_vision::OpenAiVision::new(
+            url,
+            &cli.describe_model,
+            cli.no_think,
+        )
+    });
     #[cfg(not(feature = "describe"))]
     if cli.describe_url.is_some() {
-        anyhow::bail!("this build has no descriptions; rebuild with the \"describe\" feature");
-    }
-    let mut writers: Vec<Box<dyn DeckWriter>> = Vec::new();
-    if cli.format.contains(&Format::Md) {
-        writers.push(Box::new(output::Markdown));
-    }
-    if cli.format.contains(&Format::Json) {
-        writers.push(Box::new(output::Json));
+        anyhow::bail!("this build cannot read slides; rebuild with the \"describe\" feature");
     }
 
     app::scribe(
-        Request { recording: &cli.recording, out: &out, settings: &settings, slides: !cli.no_slides, debug: cli.debug },
+        Request {
+            recording: &recording,
+            out: &out,
+            settings: &settings,
+            slides: !cli.no_slides,
+            debug: cli.debug,
+        },
         Adapters {
             frames: &media,
             audio: &media,
             stills: &media,
             recognizer,
             #[cfg(feature = "describe")]
-            describer: describer.as_ref().map(|d| d as &dyn deckscribe_core::ports::Describer),
+            describer: describer
+                .as_ref()
+                .map(|d| d as &dyn deckscribe_core::ports::Describer),
             #[cfg(not(feature = "describe"))]
             describer: None,
-            writers,
+            writers: vec![Box::new(Bundle)],
         },
     )?;
+    println!(
+        "{}",
+        out.join(deckscribe::adapters::bundle::ENTRY).display()
+    );
     Ok(())
 }
 
@@ -137,7 +155,10 @@ fn make_recognizer(cli: &Cli) -> Result<Option<app::MakeRecognizer<'static>>> {
         return Ok(None);
     }
     // Resolve (and download) the model before any decoding starts.
-    let path = HuggingFaceStore { given: cli.model.clone() }.speech_model()?;
+    let path = HuggingFaceStore {
+        given: cli.model.clone(),
+    }
+    .speech_model()?;
     Ok(Some(Box::new(move || -> Result<Box<dyn Recognizer>> {
         let r = TranscribeCpp::load(&path)?;
         eprintln!("speech: {}", r.description);
@@ -148,7 +169,9 @@ fn make_recognizer(cli: &Cli) -> Result<Option<app::MakeRecognizer<'static>>> {
 #[cfg(not(feature = "transcribe"))]
 fn make_recognizer(cli: &Cli) -> Result<Option<app::MakeRecognizer<'static>>> {
     if !cli.no_transcript {
-        anyhow::bail!("this build has no transcription; pass --no-transcript or rebuild with the \"transcribe\" feature");
+        anyhow::bail!(
+            "this build has no transcription; pass --no-transcript or rebuild with the \"transcribe\" feature"
+        );
     }
     Ok(None)
 }

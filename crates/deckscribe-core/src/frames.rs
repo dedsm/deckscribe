@@ -104,7 +104,12 @@ impl FrameFeatures {
             return 0.0;
         }
         let open = mask.iter().filter(|m| !**m).count().max(1) as f32;
-        let n = self.change(i).iter().zip(mask).filter(|(s, m)| !**m && moved(**s)).count();
+        let n = self
+            .change(i)
+            .iter()
+            .zip(mask)
+            .filter(|(s, m)| !**m && moved(**s))
+            .count();
         n as f32 / open
     }
 

@@ -53,16 +53,27 @@ pub fn pieces(pcm: &[f32], max: usize) -> Vec<(usize, usize)> {
 
 /// The transcript of `pcm` (16 kHz mono): pieces of at most `piece_seconds`,
 /// each recognized and shifted onto the recording's timeline.
-pub fn transcribe(recognizer: &mut dyn Recognizer, pcm: &[f32], piece_seconds: usize) -> Result<Vec<Word>> {
+pub fn transcribe(
+    recognizer: &mut dyn Recognizer,
+    pcm: &[f32],
+    piece_seconds: usize,
+) -> Result<Vec<Word>> {
     let mut words = Vec::new();
     for (a, b) in pieces(pcm, piece_seconds.max(1) * AUDIO_RATE) {
         let offset = a as f64 / AUDIO_RATE as f64;
-        let piece = recognizer.recognize(&pcm[a..b]).with_context(|| format!("transcribing at {offset:.0}s"))?;
-        words.extend(piece.into_iter().filter(|w| !w.text.trim().is_empty()).map(|w| Word {
-            start: offset + w.start,
-            end: offset + w.end,
-            text: w.text.trim().to_string(),
-        }));
+        let piece = recognizer
+            .recognize(&pcm[a..b])
+            .with_context(|| format!("transcribing at {offset:.0}s"))?;
+        words.extend(
+            piece
+                .into_iter()
+                .filter(|w| !w.text.trim().is_empty())
+                .map(|w| Word {
+                    start: offset + w.start,
+                    end: offset + w.end,
+                    text: w.text.trim().to_string(),
+                }),
+        );
     }
     Ok(words)
 }

@@ -26,7 +26,10 @@ impl ModelStore for HuggingFaceStore {
             }
             return Ok(p.clone());
         }
-        let dir = dirs::cache_dir().context("no cache folder on this system; pass --model")?.join("deckscribe").join("models");
+        let dir = cache_dir()
+            .context("no cache folder on this system; pass --model")?
+            .join("deckscribe")
+            .join("models");
         let path = dir.join(NAME);
         if path.is_file() {
             return Ok(path);
@@ -37,10 +40,32 @@ impl ModelStore for HuggingFaceStore {
     }
 }
 
+/// The platform's per-user cache folder: `$XDG_CACHE_HOME` or `~/.cache` on
+/// Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows.
+fn cache_dir() -> Option<PathBuf> {
+    let env = |k: &str| {
+        std::env::var_os(k)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    if cfg!(windows) {
+        return env("LOCALAPPDATA");
+    }
+    if cfg!(target_os = "macos") {
+        return env("HOME").map(|h| h.join("Library").join("Caches"));
+    }
+    env("XDG_CACHE_HOME").or_else(|| env("HOME").map(|h| h.join(".cache")))
+}
+
 fn download(path: &Path) -> Result<()> {
-    eprintln!("Downloading Parakeet TDT 0.6B v2 by NVIDIA (CC BY 4.0), about 700 MB, to {}", path.display());
+    eprintln!(
+        "Downloading Parakeet TDT 0.6B v2 by NVIDIA (CC BY 4.0), about 700 MB, to {}",
+        path.display()
+    );
     let partial = path.with_extension("gguf.partial");
-    let mut response = ureq::get(URL).call().context("downloading the speech model")?;
+    let mut response = ureq::get(URL)
+        .call()
+        .context("downloading the speech model")?;
     let mut body = response.body_mut().as_reader();
     let mut file = File::create(&partial)?;
     let mut hasher = Sha256::new();

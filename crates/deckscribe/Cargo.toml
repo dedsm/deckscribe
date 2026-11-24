@@ -14,18 +14,17 @@ path = "src/main.rs"
 default = ["transcribe", "describe"]
 # Speech to text with transcribe.cpp: builds C++ with CMake and a GPU backend
 # (Metal on macOS, Vulkan elsewhere). Without it the build is pure Rust.
-transcribe = ["dep:transcribe-cpp", "dep:transcribe-cpp-sys", "dep:ureq", "dep:sha2", "dep:dirs"]
+transcribe = ["dep:transcribe-cpp", "dep:transcribe-cpp-sys", "dep:ureq", "dep:sha2"]
 # Slide descriptions from an OpenAI-compatible server.
 describe = ["dep:ureq", "dep:base64"]
 
 [dependencies]
-deckscribe-core = { path = "../deckscribe-core" }
+deckscribe-core = { path = "../deckscribe-core", version = "0.1.0" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive"] }
-base64 = { version = "0.22", optional = true }
-dirs = { version = "6", optional = true }
+base64 = { version = "0.23", optional = true }
 sha2 = { version = "0.10", optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
 # The crate and its -sys crate must stay on the same version: the bindings

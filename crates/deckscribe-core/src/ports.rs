@@ -26,12 +26,20 @@ pub trait StillSource: Sync {
     /// `image` re-encoded as JPEG at most `width` wide, with `blank` regions
     /// (x, y, w, h as fractions of the frame) painted black.
     fn prepared(&self, image: &Path, width: u32, blank: &[[f32; 4]]) -> Result<Vec<u8>>;
+    /// One image of all `images` in order, `columns` across, each marked with
+    /// its label.
+    fn contact_sheet(&self, images: &[(PathBuf, String)], columns: usize, out: &Path)
+    -> Result<()>;
 }
 
 /// Speech to words, for one piece of 16 kHz audio. Times are from the
 /// piece's start.
 pub trait Recognizer {
     fn recognize(&mut self, pcm: &[f32]) -> Result<Vec<Word>>;
+    /// The model and where it runs, for the deck's record.
+    fn name(&self) -> String {
+        String::new()
+    }
 }
 
 /// The speech model as a local file, fetched first if needed.
@@ -42,6 +50,10 @@ pub trait ModelStore {
 /// A vision model that answers a prompt about an image.
 pub trait Describer {
     fn describe(&self, jpeg: &[u8], prompt: &str) -> Result<String>;
+    /// The model and server, for the deck's record.
+    fn name(&self) -> String {
+        String::new()
+    }
 }
 
 /// Persists a deck in one format inside an output folder.

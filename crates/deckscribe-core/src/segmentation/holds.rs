@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 use super::stretches::{Layout, Stretches};
-use crate::frames::{FrameFeatures, FPS, PIXEL_DELTA, TH, TW, instant, thumb_block};
+use crate::frames::{FPS, FrameFeatures, PIXEL_DELTA, TH, TW, instant, thumb_block};
 use crate::settings::Settings;
 use crate::time::Span;
 
@@ -31,7 +31,9 @@ pub struct FoundPart {
 
 /// Per frame: share of blocks outside its stretch's mask that moved.
 pub fn motion(features: &FrameFeatures, stretches: &Stretches) -> Vec<f32> {
-    (0..features.count).map(|i| features.motion(i, &stretches.at(i).mask)).collect()
+    (0..features.count)
+        .map(|i| features.motion(i, &stretches.at(i).mask))
+        .collect()
 }
 
 /// Share of thumbnail pixels that differ between frames `a` and `b`, outside
@@ -54,7 +56,13 @@ fn difference(features: &FrameFeatures, stretches: &Stretches, a: usize, b: usiz
     changed as f32 / open.max(1) as f32
 }
 
-pub fn find(features: &FrameFeatures, stretches: &Stretches, motion: &[f32], s: &Settings, duration: f64) -> Vec<FoundPart> {
+pub fn find(
+    features: &FrameFeatures,
+    stretches: &Stretches,
+    motion: &[f32],
+    s: &Settings,
+    duration: f64,
+) -> Vec<FoundPart> {
     let min_frames = (s.min_hold * FPS).round() as usize;
     let live = |i: usize| s.live_parts && stretches.at(i).layout == Layout::Live;
     // (first, last) frame of each still span long enough to be a slide.
@@ -72,11 +80,20 @@ pub fn find(features: &FrameFeatures, stretches: &Stretches, motion: &[f32], s: 
     let mut merged: Vec<(usize, usize)> = Vec::new();
     for h in holds {
         match merged.last_mut() {
-            Some(last) if difference(features, stretches, last.1, h.1) < s.same_slide => last.1 = h.1,
+            // Never across a live stretch: the merged slide would overlap it.
+            Some(last)
+                if !(last.1 + 1..h.0).any(live)
+                    && difference(features, stretches, last.1, h.1) < s.same_slide =>
+            {
+                last.1 = h.1
+            }
             _ => merged.push(h),
         }
     }
-    let mut parts: Vec<(usize, usize, Found)> = merged.into_iter().map(|(a, b)| (a, b, Found::Slide)).collect();
+    let mut parts: Vec<(usize, usize, Found)> = merged
+        .into_iter()
+        .map(|(a, b)| (a, b, Found::Slide))
+        .collect();
     if s.live_parts {
         for st in &stretches.list {
             if st.layout == Layout::Live && st.last + 1 - st.first >= min_frames {
@@ -91,8 +108,16 @@ pub fn find(features: &FrameFeatures, stretches: &Stretches, motion: &[f32], s: 
     let lead = (s.image_lead * FPS).round() as usize;
     let mut out = Vec::with_capacity(parts.len());
     for (k, &(first, last, kind)) in parts.iter().enumerate() {
-        let start = if k == 0 { 0.0 } else { instant(parts[k - 1].1 + 1) };
-        let end = if k + 1 == parts.len() { duration.max(instant(last + 1)) } else { instant(last + 1) };
+        let start = if k == 0 {
+            0.0
+        } else {
+            instant(parts[k - 1].1 + 1)
+        };
+        let end = if k + 1 == parts.len() {
+            duration.max(instant(last + 1))
+        } else {
+            instant(last + 1)
+        };
         // Analysis frames and seeking in the recording can disagree by a
         // fraction of a second; the very last still frame may come back as the
         // next slide.
@@ -100,7 +125,12 @@ pub fn find(features: &FrameFeatures, stretches: &Stretches, motion: &[f32], s: 
             Found::Live => (first + last) / 2,
             Found::Slide => last.saturating_sub(lead).max(first),
         };
-        out.push(FoundPart { kind, span: Span::new(start, end), image_at: instant(image), stretch: stretches.of_frame[image] });
+        out.push(FoundPart {
+            kind,
+            span: Span::new(start, end),
+            image_at: instant(image),
+            stretch: stretches.of_frame[image],
+        });
     }
     out
 }

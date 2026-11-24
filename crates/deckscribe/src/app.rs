@@ -2,16 +2,20 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
-use deckscribe_core::description::{IMAGE_WIDTH, PROMPT};
+use deckscribe_core::description::{self, IMAGE_WIDTH, PROMPT};
 use deckscribe_core::frames::FrameFeatures;
-use deckscribe_core::ports::{AudioSource, DeckWriter, Describer, FrameSource, Recognizer, StillSource};
+use deckscribe_core::ports::{
+    AudioSource, DeckWriter, Describer, FrameSource, Recognizer, StillSource,
+};
 use deckscribe_core::segmentation::{self, Found, Segmentation};
 use deckscribe_core::speech::{self, AUDIO_RATE};
-use deckscribe_core::{Deck, DeckPart, PartKind, Settings, Span, Word, alignment};
+use deckscribe_core::{About, Deck, DeckPart, PartKind, Settings, Span, Word, alignment};
 use serde_json::json;
+
+use crate::adapters::bundle::CONTACT_SHEET;
 
 pub struct Request<'a> {
     pub recording: &'a Path,
@@ -36,6 +40,12 @@ pub struct Adapters<'a> {
     pub writers: Vec<Box<dyn DeckWriter + 'a>>,
 }
 
+struct Speech {
+    words: Vec<Word>,
+    seconds: f64,
+    model: String,
+}
+
 pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
     if !req.slides && ad.recognizer.is_none() {
         bail!("nothing to do: both slides and the transcript are turned off");
@@ -49,39 +59,94 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
     // the CPU, the sound lane by the recognizer on the GPU.
     let (picture, sound) = std::thread::scope(|s| {
         let sound = ad.recognizer.map(|make| {
-            s.spawn(move || -> Result<(Vec<Word>, f64)> {
+            s.spawn(move || -> Result<Speech> {
                 let pcm = audio.audio()?;
                 let seconds = pcm.len() as f64 / AUDIO_RATE as f64;
                 let t = Instant::now();
                 let mut recognizer = make()?;
                 let words = speech::transcribe(recognizer.as_mut(), &pcm, settings.piece_seconds)?;
-                eprintln!("transcribed {} words in {:.0}s", words.len(), t.elapsed().as_secs_f64());
-                Ok((words, seconds))
+                eprintln!(
+                    "transcribed {} words in {:.0}s",
+                    words.len(),
+                    t.elapsed().as_secs_f64()
+                );
+                Ok(Speech {
+                    words,
+                    seconds,
+                    model: recognizer.name(),
+                })
             })
         });
         let picture = req.slides.then(|| -> Result<FrameFeatures> {
             let t = Instant::now();
             let mut features = FrameFeatures::new();
             ad.frames.frames(&mut |f| features.push(f))?;
-            eprintln!("read {} frames in {:.0}s", features.count, t.elapsed().as_secs_f64());
+            eprintln!(
+                "read {} frames in {:.0}s",
+                features.count,
+                t.elapsed().as_secs_f64()
+            );
             Ok(features)
         });
-        (picture, sound.map(|h| h.join().expect("the sound lane panicked")))
+        (
+            picture,
+            sound.map(|h| h.join().expect("the sound lane panicked")),
+        )
     });
     let features = picture.transpose()?;
-    let (words, audio_seconds) = sound.transpose()?.unwrap_or_default();
-    let duration = audio_seconds.max(features.as_ref().map_or(0.0, |f| f.seconds()));
+    let speech = sound.transpose()?;
+    let duration = speech
+        .as_ref()
+        .map_or(0.0, |s| s.seconds)
+        .max(features.as_ref().map_or(0.0, |f| f.seconds()));
+    let mut about = About {
+        tool: format!("deckscribe {}", env!("CARGO_PKG_VERSION")),
+        created_unix: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs()),
+        speech_model: speech
+            .as_ref()
+            .map(|s| s.model.clone())
+            .filter(|m| !m.is_empty()),
+        vision_model: ad.describer.map(|d| d.name()).filter(|m| !m.is_empty()),
+        masked: Vec::new(),
+    };
+    let words = speech.map(|s| s.words).unwrap_or_default();
 
     let mut parts: Vec<DeckPart> = Vec::new();
     let mut segmentation: Option<Segmentation> = None;
     if let Some(features) = &features {
         let seg = segmentation::segment(features, settings, duration);
         report(&seg);
+        about.masked = seg
+            .stretches
+            .overlay_summary()
+            .iter()
+            .map(|(b, secs)| {
+                format!(
+                    "{} for {}",
+                    b.describe(),
+                    deckscribe_core::time::clock(*secs)
+                )
+            })
+            .collect();
         fs::create_dir_all(req.out.join("slides"))?;
+        let digits = seg.parts.len().to_string().len().max(2);
+        let mut sheet: Vec<(PathBuf, String)> = Vec::new();
         for (k, p) in seg.parts.iter().enumerate() {
-            let image = format!("slides/slide_{:03}.jpg", k + 1);
+            let image = format!("slides/slide-{:0digits$}.jpg", k + 1);
             ad.stills.save_still(p.image_at, &req.out.join(&image))?;
-            let kind = if p.kind == Found::Slide { PartKind::Slide } else { PartKind::Live };
+            let kind = if p.kind == Found::Slide {
+                PartKind::Slide
+            } else {
+                PartKind::Live
+            };
+            let label = if kind == PartKind::Slide {
+                format!("#{}", k + 1)
+            } else {
+                format!("#{} live", k + 1)
+            };
+            sheet.push((req.out.join(&image), label));
             parts.push(DeckPart {
                 number: k + 1,
                 kind,
@@ -89,9 +154,11 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
                 image_at: Some(p.image_at),
                 image: Some(image),
                 narration: String::new(),
-                description: None,
+                slide_text: None,
             });
         }
+        ad.stills
+            .contact_sheet(&sheet, 5, &req.out.join(CONTACT_SHEET))?;
         segmentation = Some(seg);
     } else {
         parts.push(DeckPart {
@@ -101,7 +168,7 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
             image_at: None,
             image: None,
             narration: String::new(),
-            description: None,
+            slide_text: None,
         });
     }
 
@@ -119,17 +186,29 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
             let mut boxes = seg.stretches.list[found.stretch].overlays.clone();
             boxes.extend_from_slice(&settings.extra_masks);
             let blank: Vec<[f32; 4]> = boxes.iter().map(|b| b.fractions()).collect();
-            let image = req.out.join(p.image.as_deref().expect("slides have images"));
+            let image = req
+                .out
+                .join(p.image.as_deref().expect("slides have images"));
             let t = Instant::now();
             let jpeg = ad.stills.prepared(&image, IMAGE_WIDTH, &blank)?;
-            p.description = Some(describer.describe(&jpeg, PROMPT)?);
-            eprintln!("described part {}/{total} in {:.0}s", p.number, t.elapsed().as_secs_f64());
+            p.slide_text = Some(description::parse(&describer.describe(&jpeg, PROMPT)?));
+            eprintln!(
+                "described part {}/{total} in {:.0}s",
+                p.number,
+                t.elapsed().as_secs_f64()
+            );
         }
     }
 
     let deck = Deck {
-        recording: req.recording.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+        recording: req
+            .recording
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
         duration,
+        about,
         parts,
         words,
     };
@@ -142,7 +221,11 @@ pub fn scribe(req: Request, ad: Adapters) -> Result<Deck> {
                          "fps": deckscribe_core::frames::FPS, "motion": seg.motion});
         fs::write(req.out.join("debug.json"), serde_json::to_string(&dbg)?)?;
     }
-    eprintln!("wrote {} in {:.0}s", req.out.display(), started.elapsed().as_secs_f64());
+    eprintln!(
+        "wrote {} in {:.0}s",
+        req.out.display(),
+        started.elapsed().as_secs_f64()
+    );
     Ok(deck)
 }
 
@@ -160,11 +243,14 @@ fn report(seg: &Segmentation) {
         eprintln!("masking {} more overlay boxes", summary.len() - 8);
     }
     let slides = seg.parts.iter().filter(|p| p.kind == Found::Slide).count();
-    eprintln!("found {slides} slides and {} live parts", seg.parts.len() - slides);
+    eprintln!(
+        "found {slides} slides and {} live parts",
+        seg.parts.len() - slides
+    );
 }
 
-/// `<recording name>-deck` next to the recording.
+/// `<recording name>.deck` next to the recording.
 pub fn default_out(recording: &Path) -> PathBuf {
     let stem = recording.file_stem().unwrap_or_default().to_string_lossy();
-    recording.with_file_name(format!("{stem}-deck"))
+    recording.with_file_name(format!("{stem}.deck"))
 }

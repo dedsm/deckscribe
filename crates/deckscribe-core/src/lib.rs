@@ -16,7 +16,8 @@ pub mod settings;
 pub mod speech;
 pub mod time;
 
-pub use deck::{Deck, DeckPart, PartKind};
+pub use deck::{About, Deck, DeckPart, PartKind};
+pub use description::SlideText;
 pub use settings::Settings;
 pub use speech::Word;
 pub use time::Span;

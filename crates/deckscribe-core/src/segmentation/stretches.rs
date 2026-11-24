@@ -74,13 +74,25 @@ pub fn split(features: &FrameFeatures, s: &Settings) -> Stretches {
     let open = vec![false; GW * GH];
     let mut starts = vec![0];
     if s.split_at_cuts {
-        let mut in_cut = false;
+        // A cut starts a stretch. A run of several cut frames (a long pan,
+        // camera noise) is a stretch of its own: the still picture after it
+        // starts another.
+        let mut run_start: Option<usize> = None;
         for i in 1..features.count {
             let cut = features.motion(i, &open) > s.cut;
-            if cut && !in_cut {
-                starts.push(i);
+            match (cut, run_start) {
+                (true, None) => {
+                    starts.push(i);
+                    run_start = Some(i);
+                }
+                (false, Some(r)) => {
+                    if i - r >= 2 {
+                        starts.push(i);
+                    }
+                    run_start = None;
+                }
+                _ => {}
             }
-            in_cut = cut;
         }
     }
     let last_frame = features.count.saturating_sub(1);
@@ -91,12 +103,24 @@ pub fn split(features: &FrameFeatures, s: &Settings) -> Stretches {
             let last = starts.get(k + 1).map_or(last_frame, |&n| n - 1);
             let (overlays, measured, layout) = if s.find_overlays {
                 let found = overlays::find(features, first, last, s);
-                let layout = if found.too_large.is_empty() { Layout::Slides } else { Layout::Live };
+                let layout = if found.too_large.is_empty() {
+                    Layout::Slides
+                } else {
+                    Layout::Live
+                };
                 (found.boxes, found.pairs >= s.overlay_min_pairs, layout)
             } else {
                 (Vec::new(), true, Layout::Slides)
             };
-            Stretch { first, last, layout, overlays, measured, mask: Vec::new(), wide_mask: Vec::new() }
+            Stretch {
+                first,
+                last,
+                layout,
+                overlays,
+                measured,
+                mask: Vec::new(),
+                wide_mask: Vec::new(),
+            }
         })
         .collect();
 
@@ -118,7 +142,8 @@ pub fn split(features: &FrameFeatures, s: &Settings) -> Stretches {
                 }
             }
         }
-        let live = !neighbours.is_empty() && neighbours.iter().all(|&m| list[m].layout == Layout::Live);
+        let live =
+            !neighbours.is_empty() && neighbours.iter().all(|&m| list[m].layout == Layout::Live);
         list[k].overlays = boxes;
         list[k].layout = if live { Layout::Live } else { Layout::Slides };
     }

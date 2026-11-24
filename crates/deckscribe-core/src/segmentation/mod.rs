@@ -24,5 +24,9 @@ pub fn segment(features: &FrameFeatures, settings: &Settings, duration: f64) -> 
     let stretches = stretches::split(features, settings);
     let motion = holds::motion(features, &stretches);
     let parts = holds::find(features, &stretches, &motion, settings, duration);
-    Segmentation { stretches, motion, parts }
+    Segmentation {
+        stretches,
+        motion,
+        parts,
+    }
 }

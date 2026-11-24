@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::frames::{FrameFeatures, FPS, GH, GW, PIXEL_DELTA, TH, TW, thumb_block};
+use crate::frames::{FPS, FrameFeatures, GH, GW, PIXEL_DELTA, TH, TW, thumb_block};
 use crate::settings::Settings;
 
 /// Regions smaller than this many blocks are noise.
@@ -23,13 +23,24 @@ impl BlockBox {
     /// "x 77-100%, y 63-100%".
     pub fn describe(&self) -> String {
         let p = |v: usize, n: usize| (v * 100) / n;
-        format!("x {}-{}%, y {}-{}%", p(self.x0, GW), p(self.x1, GW), p(self.y0, GH), p(self.y1, GH))
+        format!(
+            "x {}-{}%, y {}-{}%",
+            p(self.x0, GW),
+            p(self.x1, GW),
+            p(self.y0, GH),
+            p(self.y1, GH)
+        )
     }
 
     /// x, y, w, h as fractions of the frame.
     pub fn fractions(&self) -> [f32; 4] {
         let (gw, gh) = (GW as f32, GH as f32);
-        [self.x0 as f32 / gw, self.y0 as f32 / gh, (self.x1 - self.x0) as f32 / gw, (self.y1 - self.y0) as f32 / gh]
+        [
+            self.x0 as f32 / gw,
+            self.y0 as f32 / gh,
+            (self.x1 - self.x0) as f32 / gw,
+            (self.y1 - self.y0) as f32 / gh,
+        ]
     }
 
     /// Parses "x,y,w,h" in fractions of the frame, e.g. "0.78,0.66,0.22,0.34".
@@ -43,7 +54,12 @@ impl BlockBox {
         };
         let gx = |f: f32| ((f.clamp(0.0, 1.0) * GW as f32) as usize).min(GW);
         let gy = |f: f32| ((f.clamp(0.0, 1.0) * GH as f32) as usize).min(GH);
-        Ok(BlockBox { x0: gx(x), y0: gy(y), x1: gx(x + w).max(gx(x) + 1), y1: gy(y + h).max(gy(y) + 1) })
+        Ok(BlockBox {
+            x0: gx(x),
+            y0: gy(y),
+            x1: gx(x + w).max(gx(x) + 1),
+            y1: gy(y + h).max(gy(y) + 1),
+        })
     }
 
     pub fn grown(&self, by: usize) -> Self {
@@ -73,7 +89,11 @@ pub fn find(features: &FrameFeatures, first: usize, last: usize, s: &Settings) -
     let step = ((s.overlay_step * FPS).round() as usize).max(1);
     let samples: Vec<usize> = (first..=last).step_by(step).collect();
     let pairs = samples.len().saturating_sub(1);
-    let mut found = Found { boxes: Vec::new(), too_large: Vec::new(), pairs };
+    let mut found = Found {
+        boxes: Vec::new(),
+        too_large: Vec::new(),
+        pairs,
+    };
     if pairs < s.overlay_min_pairs {
         return found;
     }
@@ -93,11 +113,18 @@ pub fn find(features: &FrameFeatures, first: usize, last: usize, s: &Settings) -
             *c += m as u32;
         }
     }
-    let hot: Vec<bool> = counts.iter().map(|&c| c as f32 / pairs as f32 > s.overlay_frequency).collect();
+    let hot: Vec<bool> = counts
+        .iter()
+        .map(|&c| c as f32 / pairs as f32 > s.overlay_frequency)
+        .collect();
     for b in regions(&hot) {
         // One block of padding: overlay edges blur into their surroundings.
         let b = b.grown(1);
-        if b.share() > s.overlay_max_share { found.too_large.push(b) } else { found.boxes.push(b) }
+        if b.share() > s.overlay_max_share {
+            found.too_large.push(b)
+        } else {
+            found.boxes.push(b)
+        }
     }
     found
 }
@@ -112,11 +139,21 @@ fn regions(hot: &[bool]) -> Vec<BlockBox> {
         }
         let (mut stack, mut n) = (vec![start], 0);
         seen[start] = true;
-        let mut b = BlockBox { x0: GW, y0: GH, x1: 0, y1: 0 };
+        let mut b = BlockBox {
+            x0: GW,
+            y0: GH,
+            x1: 0,
+            y1: 0,
+        };
         while let Some(i) = stack.pop() {
             n += 1;
             let (x, y) = (i % GW, i / GW);
-            b = BlockBox { x0: b.x0.min(x), y0: b.y0.min(y), x1: b.x1.max(x + 1), y1: b.y1.max(y + 1) };
+            b = BlockBox {
+                x0: b.x0.min(x),
+                y0: b.y0.min(y),
+                x1: b.x1.max(x + 1),
+                y1: b.y1.max(y + 1),
+            };
             let mut push = |j: usize| {
                 if hot[j] && !seen[j] {
                     seen[j] = true;
