@@ -1,0 +1,10 @@
+[package]
+name = "deckscribe-core"
+description = "Domain model of deckscribe: finding slides in a recorded talk and filing the spoken words under them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true

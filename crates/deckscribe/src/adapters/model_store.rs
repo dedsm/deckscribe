@@ -1,41 +1,40 @@
 //! The speech model is not shipped: it is downloaded once, from a pinned
-//! revision, and checked against a known hash.
+//! revision, into the platform's cache folder and checked against a known hash.
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use deckscribe_core::ports::ModelStore;
 use sha2::{Digest, Sha256};
 
 const NAME: &str = "parakeet-tdt-0.6b-v2-Q8_0.gguf";
 const URL: &str = "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/58239cf6d0ecb0af921e7936c1e5e0a8dba91dbb/parakeet-tdt-0.6b-v2-Q8_0.gguf";
 const SHA256: &str = "f0d0e99cebb6d3b83f1f7069b82b5d3c2e39a54545b0da039cb4bafd9c4e5caa";
 
-fn cache_dir() -> Result<PathBuf> {
-    let base = match std::env::var_os("XDG_CACHE_HOME") {
-        Some(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".cache"),
-    };
-    Ok(base.join("deckscribe").join("models"))
+/// A model file given by the user, or the default one from the cache.
+pub struct HuggingFaceStore {
+    pub given: Option<PathBuf>,
 }
 
-/// `given` if set, else the cached default model, downloading it first if needed.
-pub fn resolve(given: Option<&Path>) -> Result<PathBuf> {
-    if let Some(p) = given {
-        if !p.is_file() {
-            bail!("model file {} does not exist", p.display());
+impl ModelStore for HuggingFaceStore {
+    fn speech_model(&self) -> Result<PathBuf> {
+        if let Some(p) = &self.given {
+            if !p.is_file() {
+                bail!("model file {} does not exist", p.display());
+            }
+            return Ok(p.clone());
         }
-        return Ok(p.to_path_buf());
+        let dir = dirs::cache_dir().context("no cache folder on this system; pass --model")?.join("deckscribe").join("models");
+        let path = dir.join(NAME);
+        if path.is_file() {
+            return Ok(path);
+        }
+        fs::create_dir_all(&dir)?;
+        download(&path)?;
+        Ok(path)
     }
-    let dir = cache_dir()?;
-    let path = dir.join(NAME);
-    if path.is_file() {
-        return Ok(path);
-    }
-    fs::create_dir_all(&dir)?;
-    download(&path)?;
-    Ok(path)
 }
 
 fn download(path: &Path) -> Result<()> {

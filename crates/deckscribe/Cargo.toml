@@ -1,0 +1,38 @@
+[package]
+name = "deckscribe"
+description = "Turn a recorded talk into its slides, the words spoken over each, and a description of each slide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "deckscribe"
+path = "src/main.rs"
+
+[features]
+default = ["transcribe", "describe"]
+# Speech to text with transcribe.cpp: builds C++ with CMake and a GPU backend
+# (Metal on macOS, Vulkan elsewhere). Without it the build is pure Rust.
+transcribe = ["dep:transcribe-cpp", "dep:transcribe-cpp-sys", "dep:ureq", "dep:sha2", "dep:dirs"]
+# Slide descriptions from an OpenAI-compatible server.
+describe = ["dep:ureq", "dep:base64"]
+
+[dependencies]
+deckscribe-core = { path = "../deckscribe-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }
+base64 = { version = "0.22", optional = true }
+dirs = { version = "6", optional = true }
+sha2 = { version = "0.10", optional = true }
+ureq = { version = "3", features = ["json"], optional = true }
+# The crate and its -sys crate must stay on the same version: the bindings
+# refuse to load a native library from another release.
+transcribe-cpp = { version = "=0.4.2", optional = true }
+transcribe-cpp-sys = { version = "=0.4.2", optional = true }
+
+# Metal is transcribe-cpp's default on Apple; elsewhere use Vulkan.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+transcribe-cpp = { version = "=0.4.2", features = ["vulkan"], optional = true }
