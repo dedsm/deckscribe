@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use deckscribe::adapters::{bundle::Bundle, ffmpeg::Ffmpeg};
+use deckscribe::adapters::{bundle::Bundle, ffmpeg::Ffmpeg, page::Page};
 use deckscribe::app::{self, Adapters, Request};
 use deckscribe_core::Settings;
 use deckscribe_core::segmentation::overlays::BlockBox;
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
                 .map(|d| d as &dyn deckscribe_core::ports::TextModel),
             #[cfg(not(feature = "describe"))]
             text_model: None,
-            writers: vec![Box::new(Bundle)],
+            writers: vec![Box::new(Bundle), Box::new(Page)],
         },
     )?;
     println!(

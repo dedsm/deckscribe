@@ -6,5 +6,6 @@ pub mod ffmpeg;
 pub mod model_store;
 #[cfg(feature = "describe")]
 pub mod openai_vision;
+pub mod page;
 #[cfg(feature = "transcribe")]
 pub mod transcribe_cpp;

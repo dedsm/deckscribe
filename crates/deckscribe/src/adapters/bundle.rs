@@ -4,6 +4,7 @@
 //! ```text
 //! talk.deck/
 //!   deck.md            header, how to read the deck, one line per part, then every part
+//!   deck.html          the same for people: each image beside what was said (see `page`)
 //!   deck.json          the same as data (schema "deckscribe.deck/1")
 //!   words.json         every word as [start, end, "text"], seconds
 //!   contact-sheet.jpg  every part's image in order, each marked #N
@@ -391,7 +392,7 @@ fn manifest(deck: &Deck) -> Value {
         "summary": deck.summary,
         "corrected": deck.corrected,
         "possible_mishearings": deck.possible,
-        "files": {"entry": ENTRY, "contact_sheet": CONTACT_SHEET, "words": WORDS, "slides": "slides/"},
+        "files": {"entry": ENTRY, "page": crate::adapters::page::PAGE, "contact_sheet": CONTACT_SHEET, "words": WORDS, "slides": "slides/"},
         "parts": parts,
     })
 }

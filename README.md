@@ -13,6 +13,7 @@ deckscribe talk.mp4 --describe-url http://127.0.0.1:8012 --describe-model gemma
 ```
 talk.deck/
   deck.md            read this first: how to read the deck, one line per slide, then every slide
+  deck.html          for people: open in a browser, each slide beside what was said over it
   contact-sheet.jpg  every slide in one image, each marked #N
   slides/slide-NN.jpg
   deck.json          the same content as data (schema deckscribe.deck/1)
