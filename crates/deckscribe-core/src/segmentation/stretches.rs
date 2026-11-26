@@ -192,9 +192,7 @@ pub fn split(features: &FrameFeatures, s: &Settings) -> Stretches {
     }
     let mut of_frame = vec![0; features.count];
     for (k, st) in list.iter().enumerate() {
-        for f in st.first..=st.last {
-            of_frame[f] = k;
-        }
+        of_frame[st.first..=st.last].fill(k);
     }
     Stretches { list, of_frame }
 }

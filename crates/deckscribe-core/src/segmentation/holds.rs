@@ -69,7 +69,9 @@ pub fn find(
     let mut holds: Vec<(usize, usize)> = Vec::new();
     let mut start = 0;
     for i in 1..=features.count {
-        let ends = i == features.count || motion[i] > s.hold_change || live(i) != live(start);
+        let ends = i == features.count
+            || motion.get(i).is_some_and(|&m| m > s.hold_change)
+            || live(i) != live(start);
         if ends {
             if !live(start) && i - start >= min_frames {
                 holds.push((start, i - 1));
